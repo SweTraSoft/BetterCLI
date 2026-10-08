@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import shlex
 
 from PySide6.QtCore import QObject, QSize, Qt, QThread, Signal
 from PySide6.QtGui import QAction, QKeySequence
@@ -14,21 +15,21 @@ from PySide6.QtWidgets import (
     QLineEdit,
     QMainWindow,
     QMessageBox,
+    QPlainTextEdit,
     QPushButton,
     QSplitter,
     QVBoxLayout,
     QWidget,
 )
 
-from cligui.builder import BuildError, build_argv, missing_required, preview
+from cligui.builder import build_argv, missing_required, preview
 from cligui.discovery import DiscoveryError, DiscoveryService, split_command
 from cligui.execution import CommandRunner
 from cligui.history import CommandHistory
 from cligui.model.spec import CommandSpec
 from cligui.presets import PresetStore
-from cligui.safety import Severity, inspect, worst
 from cligui.settings import Settings
-from cligui.ui.dialogs import HelpTextDialog, PresetDialog, SafetyDialog, SettingsDialog
+from cligui.ui.dialogs import HelpTextDialog, PresetDialog, SettingsDialog
 from cligui.ui.form_view import FormView
 from cligui.ui.output_view import OutputView
 
@@ -147,10 +148,10 @@ class MainWindow(QMainWindow):
 
         self.form = FormView()
 
-        self.preview_label = QLabel()
-        self.preview_label.setWordWrap(True)
-        self.preview_label.setTextInteractionFlags(Qt.TextSelectableByMouse)
-        self.preview_label.setStyleSheet(
+        self.command_editor = QPlainTextEdit()
+        self.command_editor.setTabChangesFocus(True)
+        self.command_editor.setFixedHeight(84)
+        self.command_editor.setStyleSheet(
             "font-family: Menlo, monospace;"
             "background: palette(base); padding: 8px; border-radius: 4px;"
         )
@@ -180,7 +181,7 @@ class MainWindow(QMainWindow):
         lower_layout = QVBoxLayout(lower)
         lower_layout.setContentsMargins(0, 0, 0, 0)
         lower_layout.addWidget(QLabel("Command"))
-        lower_layout.addWidget(self.preview_label)
+        lower_layout.addWidget(self.command_editor)
         lower_layout.addLayout(run_row)
 
         self.clear_output_button = QPushButton("Clear")
@@ -240,6 +241,7 @@ class MainWindow(QMainWindow):
         self.subcommand_combo.activated.connect(self._open_subcommand)
         self.filter_input.textChanged.connect(self.form.apply_filter)
         self.form.changed.connect(self._update_preview)
+        self.command_editor.textChanged.connect(self._on_command_edited)
         self.help_text_button.clicked.connect(self._show_help_text)
         self.reset_button.clicked.connect(self.form.reset_values)
         self.save_preset_button.clicked.connect(self._save_preset)
@@ -409,32 +411,37 @@ class MainWindow(QMainWindow):
     # ----- command assembly and execution --------------------------------
 
     def _current_argv(self) -> list[str] | None:
-        if self._spec is None:
-            return None
         try:
-            return build_argv(self._spec, self.form.values())
-        except BuildError:
+            return shlex.split(self.command_editor.toPlainText()) or None
+        except ValueError:
             return None
 
     def _update_preview(self) -> None:
-        ready = False
         if self._spec is None:
-            self.preview_label.setText("No command configured yet.")
-            self.copy_button.setEnabled(False)
+            self.command_editor.setPlaceholderText("No command configured yet.")
+            self.command_editor.clear()
         else:
             values = self.form.values()
             outstanding = missing_required(self._spec, values)
             if outstanding:
-                self.preview_label.setText(
+                self.command_editor.setPlaceholderText(
                     f"{self._spec.display_name}  …  still required: "
                     f"{', '.join(outstanding)}"
                 )
-                self.copy_button.setEnabled(False)
+                self.command_editor.clear()
             else:
-                self.preview_label.setText(preview(build_argv(self._spec, values)))
-                self.copy_button.setEnabled(True)
-                ready = not self.runner.running
-        self._set_run_ready(ready)
+                self.command_editor.setPlainText(preview(build_argv(self._spec, values)))
+        self._on_command_edited()
+
+    def _on_command_edited(self) -> None:
+        argv = self._current_argv()
+        self.command_editor.setToolTip(
+            "Invalid command: check for unmatched quotes"
+            if argv is None and self.command_editor.toPlainText().strip()
+            else ""
+        )
+        self.copy_button.setEnabled(argv is not None)
+        self._set_run_ready(argv is not None and not self.runner.running)
 
     def _set_run_ready(self, ready: bool) -> None:
         """Highlight Run once there is a runnable command, and only one at a time."""
@@ -461,13 +468,6 @@ class MainWindow(QMainWindow):
         if argv is None or self.runner.running:
             return
 
-        findings = inspect(argv)
-        if worst(findings) >= Severity.CAUTION:
-            dialog = SafetyDialog(preview(argv), findings, self)
-            if dialog.exec() != SafetyDialog.Accepted:
-                self.statusBar().showMessage("Cancelled")
-                return
-
         self.output.append_notice(f"$ {preview(argv)}")
         try:
             self.runner.start(argv, self.cwd_input.text().strip() or None)
@@ -492,7 +492,7 @@ class MainWindow(QMainWindow):
             summary = f"Exited with code {code}"
         self.output.append_notice(summary)
         self.statusBar().showMessage(summary)
-        self._update_preview()
+        self._on_command_edited()
 
     # ----- misc ---------------------------------------------------------
 

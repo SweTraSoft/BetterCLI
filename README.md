@@ -55,6 +55,16 @@ common tools never reach it.
 
 ## Development
 
+### Run in VS Code
+
+Install the Microsoft **Python** and **Python Debugger** extensions. Open
+**Run and Debug** in the left sidebar, select **Run cligui**, and click the
+green play button (or press **F5**). VS Code runs `uv sync` before launching
+the GUI with the project's virtual environment. Python does not need a
+separate compilation step to run the app.
+
+### Tests
+
 ```sh
 uv run pytest
 ```

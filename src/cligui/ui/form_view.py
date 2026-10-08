@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import shlex
+from pathlib import Path
 
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
@@ -141,7 +142,9 @@ class FormView(QScrollArea):
         if spec.positionals:
             form = self._add_group("Arguments")
             for positional in spec.positionals:
-                editor = editor_for_positional(positional)
+                editor = editor_for_positional(
+                    positional, allow_directory=Path(spec.argv_prefix[0]).name == "mv"
+                )
                 self._positional_editors[positional.name] = editor
                 suffix = "" if positional.required else " (optional)"
                 self._add_row(form, positional.name + suffix, positional.help, editor)

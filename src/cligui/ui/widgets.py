@@ -6,6 +6,7 @@ a ``changed`` signal - so the form can treat them uniformly.
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any
 
 from PySide6.QtCore import QObject, Qt, Signal
@@ -13,11 +14,15 @@ from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
     QDoubleSpinBox,
+    QDialog,
+    QDialogButtonBox,
     QFileDialog,
     QHBoxLayout,
     QLineEdit,
+    QListView,
     QPushButton,
     QSpinBox,
+    QTreeView,
     QWidget,
 )
 
@@ -166,15 +171,46 @@ class ListEditor(Editor):
             self.widget.setText("" if value is None else str(value))
 
 
+class PathDialog(QFileDialog):
+    def __init__(self, parent: QWidget, multiple: bool) -> None:
+        super().__init__(parent, "Choose files or folders")
+        self.setOption(QFileDialog.DontUseNativeDialog)
+        self.setFileMode(QFileDialog.ExistingFiles if multiple else QFileDialog.AnyFile)
+        self.setLabelText(QFileDialog.Accept, "Choose")
+        self.paths: list[str] = []
+        for view_type in (QListView, QTreeView):
+            for view in self.findChildren(view_type):
+                if view.selectionModel() is not None:
+                    view.selectionModel().selectionChanged.connect(self._update_choose)
+
+    def _update_choose(self) -> None:
+        buttons = self.findChild(QDialogButtonBox)
+        if buttons is not None:
+            for button in buttons.buttons():
+                if buttons.buttonRole(button) == QDialogButtonBox.AcceptRole:
+                    button.setEnabled(any(Path(path).exists() for path in self.selectedFiles()))
+
+    def accept(self) -> None:
+        paths = self.selectedFiles()
+        if paths and all(Path(path).exists() for path in paths):
+            self.paths = paths
+            QDialog.accept(self)
+
+
 class PathEditor(Editor):
-    def __init__(self, directory: bool, multiple: bool = False) -> None:
+    def __init__(
+        self, directory: bool, multiple: bool = False, allow_directory: bool = False
+    ) -> None:
         container = QWidget()
         layout = QHBoxLayout(container)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(4)
 
         self.line = QLineEdit()
-        self.line.setPlaceholderText("directory path" if directory else "file path")
+        self.line.setPlaceholderText(
+            "file or directory path" if allow_directory
+            else "directory path" if directory else "file path"
+        )
         browse = QPushButton("Browse…")
         browse.setAutoDefault(False)
         layout.addWidget(self.line, 1)
@@ -183,11 +219,15 @@ class PathEditor(Editor):
         super().__init__(container)
         self._directory = directory
         self._multiple = multiple
+        self._allow_directory = allow_directory
         self.line.textChanged.connect(lambda _: self.changed.emit())
         browse.clicked.connect(self._browse)
 
     def _browse(self) -> None:
-        if self._directory:
+        if self._allow_directory:
+            dialog = PathDialog(self.widget, self._multiple)
+            paths = dialog.paths if dialog.exec() == QDialog.Accepted else []
+        elif self._directory:
             chosen = QFileDialog.getExistingDirectory(self.widget, "Choose a directory")
             paths = [chosen] if chosen else []
         elif self._multiple:
@@ -247,5 +287,11 @@ def editor_for_option(option: OptionSpec) -> Editor:
     return editor
 
 
-def editor_for_positional(positional: PositionalSpec) -> Editor:
+def editor_for_positional(
+    positional: PositionalSpec, allow_directory: bool = False
+) -> Editor:
+    if allow_directory:
+        return PathEditor(
+            directory=False, multiple=positional.variadic, allow_directory=True
+        )
     return editor_for_kind(positional.kind, [], False, positional.variadic)

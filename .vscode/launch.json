@@ -1,0 +1,16 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Run cligui",
+            "type": "debugpy",
+            "request": "launch",
+            "module": "cligui.app",
+            "python": "${workspaceFolder}/.venv/bin/python",
+            "cwd": "${workspaceFolder}",
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "preLaunchTask": "Prepare cligui"
+        }
+    ]
+}
