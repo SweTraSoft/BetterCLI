@@ -1,0 +1,32 @@
+"""Application entry point."""
+
+from __future__ import annotations
+
+import logging
+import sys
+
+from PySide6.QtWidgets import QApplication
+
+from cligui import __version__
+
+
+def main() -> int:
+    logging.basicConfig(
+        level=logging.INFO, format="%(levelname)s %(name)s: %(message)s"
+    )
+
+    app = QApplication(sys.argv)
+    app.setApplicationName("cligui")
+    app.setApplicationDisplayName("cligui")
+    app.setApplicationVersion(__version__)
+    app.setOrganizationName("cligui")
+
+    from cligui.ui.main_window import MainWindow
+
+    window = MainWindow()
+    window.show()
+    return app.exec()
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

@@ -1,0 +1,23 @@
+usage: demo [-h] [-v] [-o FILE] [--format {json,yaml,toml}] [--retries N]
+            [--include PATTERN [PATTERN ...]] [--workdir DIR] [--[no-]color]
+            source [dest]
+
+A synthetic argparse-style command used to pin down parser behaviour.
+
+positional arguments:
+  source                Input file to process
+  dest                  Where to write the result
+
+options:
+  -h, --help            show this help message and exit
+  -v, --verbose         Increase verbosity; may be given multiple times
+  -o FILE, --output FILE
+                        Write output to FILE instead of stdout
+  --format {json,yaml,toml}
+                        Serialisation format (default: json)
+  --retries N           Number of retry attempts (default: 3)
+  --include PATTERN [PATTERN ...]
+                        Only process matching entries
+  --workdir DIR         Run inside DIR
+  --[no-]color          Toggle coloured output
+  --threshold FLOAT     Similarity cutoff

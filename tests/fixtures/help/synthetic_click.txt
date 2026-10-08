@@ -1,0 +1,14 @@
+Usage: tool [OPTIONS] SRC [DEST]
+
+  A synthetic click-style command.
+
+Options:
+  -c, --config PATH      Path to the configuration file.  [default: tool.toml]
+  --host TEXT            Bind address.  [default: 127.0.0.1]
+  --port INTEGER         Port to listen on.  [default: 8080]
+  --mode [fast|safe]     Execution mode.
+  -t, --tag TEXT         Tag to apply; can be specified multiple times.
+  --dry-run / --no-dry-run
+                         Show what would happen without doing it.
+  --timeout FLOAT        Seconds before giving up.
+  --help                 Show this message and exit.
