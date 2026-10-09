@@ -20,6 +20,25 @@ def window(monkeypatch):
     application.processEvents()
 
 
+def test_discovery_starts_without_confirmation(window, monkeypatch):
+    window.command_input.setCurrentText("git")
+    window.settings.confirm_unknown_binaries = True
+    preflight = Mock(return_value="/usr/bin/git")
+    question = Mock(side_effect=AssertionError("Unexpected discovery confirmation"))
+    start = Mock()
+    monkeypatch.setattr(window.service, "preflight", preflight)
+    monkeypatch.setattr(main_window.QMessageBox, "question", question)
+    monkeypatch.setattr(main_window.QThread, "start", start)
+
+    window.discover()
+
+    preflight.assert_called_once_with(["git"])
+    question.assert_not_called()
+    start.assert_called_once_with()
+    assert window._thread is not None
+    assert not window.discover_button.isEnabled()
+
+
 def test_manual_command_runs_and_copies_quoted_arguments(window):
     window.command_editor.setPlainText('echo -- "hello world"')
 

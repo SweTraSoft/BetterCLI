@@ -49,15 +49,11 @@ class SettingsDialog(QDialog):
         self._timeout.setSuffix(" s")
         self._timeout.setValue(settings.discovery_timeout)
 
-        self._confirm = QCheckBox("Ask before running an unfamiliar command's --help")
-        self._confirm.setChecked(settings.confirm_unknown_binaries)
-
         form.addRow("LLM fallback", self._llm_enabled)
         form.addRow("API key", self._api_key)
         form.addRow("Base URL", self._base_url)
         form.addRow("Model", self._model)
         form.addRow("Discovery timeout", self._timeout)
-        form.addRow("Discovery", self._confirm)
 
         note = QLabel(
             f"The {ENV_API_KEY} environment variable overrides the stored key. "
@@ -80,7 +76,6 @@ class SettingsDialog(QDialog):
         self._settings.base_url = self._base_url.text().strip() or self._settings.base_url
         self._settings.model = self._model.text().strip() or self._settings.model
         self._settings.discovery_timeout = self._timeout.value()
-        self._settings.confirm_unknown_binaries = self._confirm.isChecked()
         self._settings.save()
         if key := self._api_key.text().strip():
             if not set_api_key(key):

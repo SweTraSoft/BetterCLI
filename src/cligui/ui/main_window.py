@@ -85,7 +85,6 @@ class MainWindow(QMainWindow):
         self._spec: CommandSpec | None = None
         self._thread: QThread | None = None
         self._worker: _DiscoveryWorker | None = None
-        self._approved_binaries: set[str] = set()
 
         self._build_ui()
         self._connect()
@@ -263,23 +262,10 @@ class MainWindow(QMainWindow):
             return
         try:
             argv = split_command(self.command_input.currentText())
-            binary = self.service.preflight(argv)
+            self.service.preflight(argv)
         except DiscoveryError as exc:
             self._warn("Cannot read that command", str(exc))
             return
-
-        if self.settings.confirm_unknown_binaries and str(binary) not in self._approved_binaries:
-            answer = QMessageBox.question(
-                self,
-                "Run --help?",
-                f"cligui will run:\n\n{binary} --help\n\n"
-                "to discover the available options. Continue?",
-                QMessageBox.Yes | QMessageBox.No,
-                QMessageBox.Yes,
-            )
-            if answer != QMessageBox.Yes:
-                return
-            self._approved_binaries.add(str(binary))
 
         self._set_discovering(True)
         thread = QThread(self)
