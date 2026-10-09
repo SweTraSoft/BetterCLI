@@ -1,4 +1,4 @@
-"""Platform-appropriate locations for cache, presets and settings."""
+"""Platform-appropriate locations for cache, history, and settings."""
 
 from __future__ import annotations
 
@@ -34,5 +34,3 @@ def spec_cache_dir() -> Path:
     return cache_dir() / "specs"
 
 
-def presets_dir() -> Path:
-    return data_dir() / "presets"

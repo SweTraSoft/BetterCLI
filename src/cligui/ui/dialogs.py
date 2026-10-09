@@ -1,4 +1,4 @@
-"""Modal dialogs: settings, safety confirmation and preset naming."""
+"""Modal dialogs for settings, safety confirmation, and help text."""
 
 from __future__ import annotations
 
@@ -6,7 +6,6 @@ from PySide6.QtCore import Qt
 from PySide6.QtGui import QFont
 from PySide6.QtWidgets import (
     QCheckBox,
-    QComboBox,
     QDialog,
     QDialogButtonBox,
     QDoubleSpinBox,
@@ -187,25 +186,3 @@ class HelpTextDialog(QDialog):
         layout.addWidget(buttons)
 
 
-class PresetDialog(QDialog):
-    """Pick an existing preset name or type a new one."""
-
-    def __init__(self, names: list[str], parent: QWidget | None = None) -> None:
-        super().__init__(parent)
-        self.setWindowTitle("Save preset")
-        self._combo = QComboBox()
-        self._combo.setEditable(True)
-        self._combo.addItems(names)
-        self._combo.setCurrentText("")
-
-        buttons = QDialogButtonBox(QDialogButtonBox.Save | QDialogButtonBox.Cancel)
-        buttons.accepted.connect(self.accept)
-        buttons.rejected.connect(self.reject)
-
-        layout = QVBoxLayout(self)
-        layout.addWidget(QLabel("Preset name"))
-        layout.addWidget(self._combo)
-        layout.addWidget(buttons)
-
-    def name(self) -> str:
-        return self._combo.currentText().strip()

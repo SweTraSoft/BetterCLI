@@ -4,10 +4,8 @@ from pathlib import Path
 
 import pytest
 
-from cligui.builder import FormValues
 from cligui.cache import SpecCache, make_key
 from cligui.model.spec import PARSER_VERSION, CommandSpec, OptionSpec
-from cligui.presets import PresetStore
 
 
 @pytest.fixture
@@ -60,42 +58,3 @@ class TestCacheKey:
     def test_same_inputs_are_stable(self, tmp_path: Path):
         binary = tmp_path / "tool"
         assert make_key(["tool"], binary, "1") == make_key(["tool"], binary, "1")
-
-
-class TestPresetStore:
-    def test_save_and_load(self, tmp_path: Path):
-        store = PresetStore(tmp_path)
-        values = FormValues(options={"--verbose": True}, positionals={"src": "a.txt"})
-        store.save(["tool"], "My Preset", values)
-        loaded = store.load(["tool"], "My Preset")
-        assert loaded is not None
-        assert loaded.options == {"--verbose": True}
-        assert loaded.positionals == {"src": "a.txt"}
-
-    def test_names_are_listed(self, tmp_path: Path):
-        store = PresetStore(tmp_path)
-        store.save(["tool"], "beta", FormValues())
-        store.save(["tool"], "alpha", FormValues())
-        assert store.names(["tool"]) == ["alpha", "beta"]
-
-    def test_presets_are_scoped_per_command(self, tmp_path: Path):
-        store = PresetStore(tmp_path)
-        store.save(["git", "log"], "mine", FormValues())
-        assert store.names(["git", "log"]) == ["mine"]
-        assert store.names(["git", "diff"]) == []
-
-    def test_delete(self, tmp_path: Path):
-        store = PresetStore(tmp_path)
-        store.save(["tool"], "x", FormValues())
-        assert store.delete(["tool"], "x")
-        assert not store.delete(["tool"], "x")
-
-    def test_path_traversal_in_name_is_neutralised(self, tmp_path: Path):
-        store = PresetStore(tmp_path)
-        store.save(["tool"], "../../escape", FormValues())
-        written = list(tmp_path.rglob("*.json"))
-        assert len(written) == 1
-        assert tmp_path in written[0].parents
-
-    def test_missing_preset_returns_none(self, tmp_path: Path):
-        assert PresetStore(tmp_path).load(["tool"], "absent") is None

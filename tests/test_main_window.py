@@ -2,10 +2,13 @@ from types import SimpleNamespace
 from unittest.mock import Mock
 
 import pytest
+from PySide6.QtGui import QPalette
+from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QApplication
 
 from cligui.builder import build_argv
-from cligui.model.spec import CommandSpec, OptionKind, PositionalSpec
+from cligui.discovery import CommandNotFoundError
+from cligui.model.spec import CommandSpec, OptionKind, PositionalSpec, SubcommandSpec
 from cligui.ui import main_window
 from cligui.ui.widgets import PathDialog, PathEditor
 
@@ -37,6 +40,141 @@ def test_discovery_starts_without_confirmation(window, monkeypatch):
     start.assert_called_once_with()
     assert window._thread is not None
     assert not window.discover_button.isEnabled()
+
+
+def test_missing_command_tints_entry_without_popup(window, monkeypatch):
+    warning = Mock(side_effect=AssertionError("Unexpected popup"))
+    monkeypatch.setattr(
+        window.service,
+        "preflight",
+        Mock(side_effect=CommandNotFoundError("missing was not found on your PATH")),
+    )
+    monkeypatch.setattr(main_window.QMessageBox, "warning", warning)
+    line_edit = window.command_input.lineEdit()
+    original_color = line_edit.palette().color(QPalette.ColorRole.Base)
+
+    window.command_input.setCurrentText("missing")
+    window.discover()
+
+    tinted_color = line_edit.palette().color(QPalette.ColorRole.Base)
+    assert tinted_color.red() - tinted_color.green() > (
+        original_color.red() - original_color.green()
+    )
+    warning.assert_not_called()
+
+    window._on_command_text_edited("missingo")
+    assert line_edit.palette().color(QPalette.ColorRole.Base) == original_color
+
+
+def test_command_entry_discovers_after_typing_pauses(window, monkeypatch):
+    preflight = Mock(return_value="/usr/bin/git")
+    start = Mock()
+    monkeypatch.setattr(window.service, "preflight", preflight)
+    monkeypatch.setattr(main_window.QThread, "start", start)
+
+    command_edit = window.command_input.lineEdit()
+    command_edit.setFocus()
+    QTest.keyClicks(command_edit, "git")
+    QTest.qWait(300)
+    QTest.keyClicks(command_edit, " log")
+    QTest.qWait(300)
+    preflight.assert_not_called()
+
+    QTest.qWait(250)
+    preflight.assert_called_once_with(["git", "log"])
+    start.assert_called_once_with()
+    assert window.command_input.currentText() == "git"
+
+
+def test_initial_child_command_discovers_parent_subcommands(window, monkeypatch):
+    preflight = Mock(return_value="/usr/bin/git")
+    start = Mock()
+    monkeypatch.setattr(window.service, "preflight", preflight)
+    monkeypatch.setattr(main_window.QThread, "start", start)
+    window.command_input.setCurrentText("git clone")
+
+    window.discover()
+
+    preflight.assert_called_once_with(["git", "clone"])
+    assert window.command_input.currentText() == "git"
+    assert window._worker._parent_argv == ["git"]
+    start.assert_called_once_with()
+
+
+def test_initial_child_discovery_populates_and_selects_parent_subcommand(window):
+    parent_spec = CommandSpec(
+        argv_prefix=["git"],
+        subcommands=[SubcommandSpec(name="clone"), SubcommandSpec(name="commit")],
+    )
+    child_spec = CommandSpec(argv_prefix=["git", "clone"])
+    result = SimpleNamespace(from_cache=False, note=None)
+    window.command_input.setCurrentText("git")
+
+    window._on_discovered(
+        child_spec,
+        result,
+        parent_result=SimpleNamespace(spec=parent_spec),
+    )
+
+    assert not window.subcommand_combo.isHidden()
+    assert window.subcommand_combo.currentText() == "clone"
+    assert [window.subcommand_combo.itemData(index) for index in range(1, 3)] == [
+        "clone",
+        "commit",
+    ]
+
+
+def test_subcommand_selection_keeps_only_top_command_in_entry(window, monkeypatch):
+    spec = CommandSpec(
+        argv_prefix=["git"],
+        subcommands=[SubcommandSpec(name="clone"), SubcommandSpec(name="commit")],
+    )
+    window._spec = spec
+    window._refresh_subcommands(spec)
+    preflight = Mock(return_value="/usr/bin/git")
+    start = Mock()
+    monkeypatch.setattr(window.service, "preflight", preflight)
+    monkeypatch.setattr(main_window.QThread, "start", start)
+
+    window._open_subcommand(1)
+
+    assert window.command_input.currentText() == "git"
+    preflight.assert_called_once_with(["git", "clone"])
+    start.assert_called_once_with()
+    assert window.subcommand_combo.currentText() == "clone"
+
+
+def test_subcommand_dropdown_stays_available_for_typed_child_command(window):
+    window._refresh_subcommands(
+        CommandSpec(
+            argv_prefix=["git"],
+            subcommands=[SubcommandSpec(name="clone"), SubcommandSpec(name="commit")],
+        )
+    )
+    window.command_input.setCurrentText("git clone")
+
+    window._refresh_subcommands(CommandSpec(argv_prefix=["git", "clone"]))
+
+    assert not window.subcommand_combo.isHidden()
+    assert [window.subcommand_combo.itemData(index) for index in range(1, 3)] == [
+        "clone",
+        "commit",
+    ]
+    assert window.subcommand_combo.currentText() == "clone"
+
+
+def test_subcommand_dropdown_hides_for_unrelated_command(window):
+    window._refresh_subcommands(
+        CommandSpec(
+            argv_prefix=["git"],
+            subcommands=[SubcommandSpec(name="clone")],
+        )
+    )
+    window.command_input.setCurrentText("curl")
+
+    window._refresh_subcommands(CommandSpec(argv_prefix=["curl"]))
+
+    assert window.subcommand_combo.isHidden()
 
 
 def test_manual_command_runs_and_copies_quoted_arguments(window):

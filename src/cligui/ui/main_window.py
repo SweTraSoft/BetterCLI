@@ -5,8 +5,8 @@ from __future__ import annotations
 import logging
 import shlex
 
-from PySide6.QtCore import QObject, QSize, Qt, QThread, Signal
-from PySide6.QtGui import QAction, QKeySequence
+from PySide6.QtCore import QObject, QSize, Qt, QThread, QTimer, Signal
+from PySide6.QtGui import QAction, QColor, QKeySequence, QPalette
 from PySide6.QtWidgets import (
     QComboBox,
     QFileDialog,
@@ -23,13 +23,17 @@ from PySide6.QtWidgets import (
 )
 
 from cligui.builder import build_argv, missing_required, preview
-from cligui.discovery import DiscoveryError, DiscoveryService, split_command
+from cligui.discovery import (
+    CommandNotFoundError,
+    DiscoveryError,
+    DiscoveryService,
+    split_command,
+)
 from cligui.execution import CommandRunner
 from cligui.history import CommandHistory
 from cligui.model.spec import CommandSpec
-from cligui.presets import PresetStore
 from cligui.settings import Settings
-from cligui.ui.dialogs import HelpTextDialog, PresetDialog, SettingsDialog
+from cligui.ui.dialogs import HelpTextDialog, SettingsDialog
 from cligui.ui.form_view import FormView
 from cligui.ui.output_view import OutputView
 
@@ -50,17 +54,29 @@ RUN_READY_STYLE = (
 class _DiscoveryWorker(QObject):
     """Runs discovery off the GUI thread; the child process may block for seconds."""
 
-    succeeded = Signal(object, object)
+    succeeded = Signal(object, object, object)
     failed = Signal(str)
 
-    def __init__(self, service: DiscoveryService, argv: list[str], refresh: bool) -> None:
+    def __init__(
+        self,
+        service: DiscoveryService,
+        argv: list[str],
+        refresh: bool,
+        parent_argv: list[str] | None = None,
+    ) -> None:
         super().__init__()
         self._service = service
         self._argv = argv
         self._refresh = refresh
+        self._parent_argv = parent_argv
 
     def run(self) -> None:
         try:
+            parent_result = (
+                self._service.discover(self._parent_argv, refresh=self._refresh)
+                if self._parent_argv is not None
+                else None
+            )
             result = self._service.discover(self._argv, refresh=self._refresh)
         except DiscoveryError as exc:
             self.failed.emit(str(exc))
@@ -68,7 +84,7 @@ class _DiscoveryWorker(QObject):
             log.exception("discovery failed")
             self.failed.emit(f"Unexpected error during discovery: {exc}")
         else:
-            self.succeeded.emit(result.spec, result)
+            self.succeeded.emit(result.spec, result, parent_result)
 
 
 class MainWindow(QMainWindow):
@@ -79,12 +95,16 @@ class MainWindow(QMainWindow):
 
         self.settings = Settings.load()
         self.service = DiscoveryService(self.settings)
-        self.presets = PresetStore()
         self.history = CommandHistory()
         self.runner = CommandRunner(self)
         self._spec: CommandSpec | None = None
+        self._subcommand_owner: list[str] | None = None
         self._thread: QThread | None = None
         self._worker: _DiscoveryWorker | None = None
+        self._search_timer = QTimer(self)
+        self._search_timer.setSingleShot(True)
+        self._search_timer.setInterval(500)
+        self._search_timer.timeout.connect(self.discover)
 
         self._build_ui()
         self._connect()
@@ -103,6 +123,7 @@ class MainWindow(QMainWindow):
         )
         self.command_input.lineEdit().setClearButtonEnabled(True)
         self.command_input.setToolTip("Recently used commands are listed here")
+        self._command_input_palette = QPalette(self.command_input.lineEdit().palette())
         self._refresh_history()
 
         self.discover_button = QPushButton("Discover")
@@ -132,17 +153,11 @@ class MainWindow(QMainWindow):
         )
         self.help_text_button.setEnabled(False)
 
-        self.preset_combo = QComboBox()
-        self.preset_combo.setMinimumWidth(160)
-        self.preset_combo.setToolTip("Load a saved configuration")
-        self.save_preset_button = QPushButton("Save preset")
         self.reset_button = QPushButton("Reset")
 
         tools_row = QHBoxLayout()
         tools_row.addWidget(self.filter_input, 1)
         tools_row.addWidget(self.help_text_button)
-        tools_row.addWidget(self.preset_combo)
-        tools_row.addWidget(self.save_preset_button)
         tools_row.addWidget(self.reset_button)
 
         self.form = FormView()
@@ -222,17 +237,15 @@ class MainWindow(QMainWindow):
         clear_history_action = QAction("Clear command history", self)
         clear_history_action.triggered.connect(self._clear_history)
 
-        delete_preset_action = QAction("Delete selected preset", self)
-        delete_preset_action.triggered.connect(self._delete_preset)
-
         menu = self.menuBar().addMenu("Tools")
         menu.addAction(settings_action)
-        menu.addAction(delete_preset_action)
-        menu.addSeparator()
         menu.addAction(clear_history_action)
         menu.addAction(clear_cache_action)
 
     def _connect(self) -> None:
+        self.command_input.lineEdit().textEdited.connect(
+            self._on_command_text_edited
+        )
         self.command_input.lineEdit().returnPressed.connect(self.discover)
         self.command_input.activated.connect(lambda _: self.discover())
         self.discover_button.clicked.connect(self.discover)
@@ -243,8 +256,6 @@ class MainWindow(QMainWindow):
         self.command_editor.textChanged.connect(self._on_command_edited)
         self.help_text_button.clicked.connect(self._show_help_text)
         self.reset_button.clicked.connect(self.form.reset_values)
-        self.save_preset_button.clicked.connect(self._save_preset)
-        self.preset_combo.activated.connect(self._load_preset)
         self.cwd_button.clicked.connect(self._choose_cwd)
         self.copy_button.clicked.connect(self._copy_command)
         self.run_button.clicked.connect(self.run)
@@ -257,19 +268,36 @@ class MainWindow(QMainWindow):
 
     # ----- discovery ----------------------------------------------------
 
-    def discover(self, refresh: bool = False) -> None:
+    def discover(
+        self, refresh: bool = False, argv: list[str] | None = None
+    ) -> None:
+        self._search_timer.stop()
         if self._thread is not None:
             return
         try:
-            argv = split_command(self.command_input.currentText())
+            argv = argv or split_command(self.command_input.currentText())
+            self.command_input.setCurrentText(argv[0])
             self.service.preflight(argv)
+        except CommandNotFoundError as exc:
+            self._set_command_input_invalid(True)
+            self.statusBar().showMessage(str(exc))
+            return
         except DiscoveryError as exc:
+            self._set_command_input_invalid(False)
             self._warn("Cannot read that command", str(exc))
             return
 
+        self._set_command_input_invalid(False)
         self._set_discovering(True)
+        parent_argv = None
+        if len(argv) > 1 and (
+            self._subcommand_owner is None
+            or argv[: len(self._subcommand_owner)] != self._subcommand_owner
+        ):
+            parent_argv = argv[:1]
+
         thread = QThread(self)
-        worker = _DiscoveryWorker(self.service, argv, refresh)
+        worker = _DiscoveryWorker(self.service, argv, refresh, parent_argv)
         worker.moveToThread(thread)
         thread.started.connect(worker.run)
         worker.succeeded.connect(self._on_discovered)
@@ -282,6 +310,30 @@ class MainWindow(QMainWindow):
         self._thread = thread
         self._worker = worker
         thread.start()
+
+    def _on_command_text_edited(self, _text: str) -> None:
+        self._set_command_input_invalid(False)
+        self._search_timer.start()
+
+    def _set_command_input_invalid(self, invalid: bool) -> None:
+        line_edit = self.command_input.lineEdit()
+        if not invalid:
+            line_edit.setPalette(self._command_input_palette)
+            return
+
+        palette = QPalette(self._command_input_palette)
+        base = palette.color(QPalette.ColorRole.Base)
+        tint = QColor(220, 70, 70)
+        strength = 0.16
+        palette.setColor(
+            QPalette.ColorRole.Base,
+            QColor(
+                round(base.red() * (1 - strength) + tint.red() * strength),
+                round(base.green() * (1 - strength) + tint.green() * strength),
+                round(base.blue() * (1 - strength) + tint.blue() * strength),
+            ),
+        )
+        line_edit.setPalette(palette)
 
     def _set_discovering(self, busy: bool) -> None:
         self.discover_button.setEnabled(not busy)
@@ -296,16 +348,16 @@ class MainWindow(QMainWindow):
         self._worker = None
         self._set_discovering(False)
 
-    def _on_discovered(self, spec: CommandSpec, result) -> None:
+    def _on_discovered(self, spec: CommandSpec, result, parent_result=None) -> None:
         self._spec = spec
         self.form.load(spec)
         self.filter_input.clear()
         self.help_text_button.setEnabled(bool(spec.raw_help))
         self.history.add(spec.display_name)
         self._refresh_history()
+        if parent_result is not None:
+            self._refresh_subcommands(parent_result.spec)
         self._refresh_subcommands(spec)
-        self._refresh_presets()
-
         origin = "cache" if result.from_cache else spec.source.value
         parts = [f"{len(spec.options)} options", f"{len(spec.positionals)} arguments"]
         if spec.subcommands:
@@ -317,14 +369,50 @@ class MainWindow(QMainWindow):
             self.output.append_notice(result.note)
 
     def _refresh_subcommands(self, spec: CommandSpec) -> None:
+        if not spec.subcommands:
+            try:
+                current_argv = split_command(self.command_input.currentText())
+            except DiscoveryError:
+                current_argv = []
+            if (
+                self._subcommand_owner is not None
+                and (
+                    (
+                        len(current_argv) > len(self._subcommand_owner)
+                        and current_argv[: len(self._subcommand_owner)]
+                        == self._subcommand_owner
+                    )
+                    or (
+                        len(spec.argv_prefix) > len(self._subcommand_owner)
+                        and spec.argv_prefix[: len(self._subcommand_owner)]
+                        == self._subcommand_owner
+                    )
+                )
+            ):
+                child_argv = (
+                    spec.argv_prefix
+                    if spec.argv_prefix[: len(self._subcommand_owner)]
+                    == self._subcommand_owner
+                    else current_argv
+                )
+                child = child_argv[len(self._subcommand_owner)]
+                child_index = self.subcommand_combo.findData(child)
+                if child_index >= 0:
+                    self.subcommand_combo.setCurrentIndex(child_index)
+                self.subcommand_combo.setVisible(True)
+                return
+
         self.subcommand_combo.blockSignals(True)
         self.subcommand_combo.clear()
         if spec.subcommands:
+            self._subcommand_owner = list(spec.argv_prefix)
             self.subcommand_combo.addItem(
                 f"Subcommands ({len(spec.subcommands)})…", userData=None
             )
             for sub in spec.subcommands:
                 self.subcommand_combo.addItem(sub.display, userData=sub.name)
+        else:
+            self._subcommand_owner = None
         self.subcommand_combo.blockSignals(False)
         self.subcommand_combo.setVisible(bool(spec.subcommands))
 
@@ -332,14 +420,15 @@ class MainWindow(QMainWindow):
         name = self.subcommand_combo.itemData(index)
         if not name or self._spec is None:
             return
-        self.command_input.setCurrentText(f"{self._spec.display_name} {name}")
-        self.discover()
+        parent_argv = self._subcommand_owner or self._spec.argv_prefix
+        argv = [*parent_argv, name]
+        self.command_input.setCurrentText(argv[0])
+        self.subcommand_combo.setCurrentIndex(index)
+        self.discover(argv=argv)
 
     def _on_discovery_failed(self, message: str) -> None:
         self.statusBar().showMessage("Discovery failed")
         self._warn("Could not discover options", message)
-
-    # ----- presets ------------------------------------------------------
 
     def _refresh_history(self) -> None:
         """Repopulate the dropdown without disturbing what the user has typed."""
@@ -354,45 +443,6 @@ class MainWindow(QMainWindow):
         self.history.clear()
         self._refresh_history()
         self.statusBar().showMessage("Command history cleared")
-
-    def _refresh_presets(self) -> None:
-        self.preset_combo.clear()
-        if self._spec is None:
-            return
-        names = self.presets.names(self._spec.argv_prefix)
-        self.preset_combo.addItem("Presets…")
-        self.preset_combo.addItems(names)
-        self.preset_combo.setEnabled(bool(names))
-
-    def _save_preset(self) -> None:
-        if self._spec is None:
-            return
-        dialog = PresetDialog(self.presets.names(self._spec.argv_prefix), self)
-        if dialog.exec() != PresetDialog.Accepted or not dialog.name():
-            return
-        self.presets.save(self._spec.argv_prefix, dialog.name(), self.form.values())
-        self._refresh_presets()
-        self.statusBar().showMessage(f"Saved preset “{dialog.name()}”")
-
-    def _load_preset(self, index: int) -> None:
-        if self._spec is None or index <= 0:
-            return
-        name = self.preset_combo.itemText(index)
-        values = self.presets.load(self._spec.argv_prefix, name)
-        if values is None:
-            self._warn("Preset unavailable", f"“{name}” could not be read.")
-            return
-        self.form.set_values(values)
-        self.statusBar().showMessage(f"Loaded preset “{name}”")
-
-    def _delete_preset(self) -> None:
-        index = self.preset_combo.currentIndex()
-        if self._spec is None or index <= 0:
-            return
-        name = self.preset_combo.currentText()
-        if self.presets.delete(self._spec.argv_prefix, name):
-            self._refresh_presets()
-            self.statusBar().showMessage(f"Deleted preset “{name}”")
 
     # ----- command assembly and execution --------------------------------
 

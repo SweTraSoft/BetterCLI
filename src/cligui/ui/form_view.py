@@ -212,14 +212,6 @@ class FormView(QScrollArea):
             extra = self._extra.text().split()
         return FormValues(options=options, positionals=positionals, extra=extra)
 
-    def set_values(self, values: FormValues) -> None:
-        for name, editor in self._option_editors.items():
-            editor.set_value(values.options.get(name))
-        for name, editor in self._positional_editors.items():
-            editor.set_value(values.positionals.get(name))
-        self._extra.setText(shlex.join(values.extra))
-        self.changed.emit()
-
     def reset_values(self) -> None:
         for editor in (*self._option_editors.values(), *self._positional_editors.values()):
             editor.clear()

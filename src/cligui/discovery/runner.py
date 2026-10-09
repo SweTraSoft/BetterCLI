@@ -32,6 +32,10 @@ class DiscoveryError(RuntimeError):
     """Raised when help text cannot be obtained for a command."""
 
 
+class CommandNotFoundError(DiscoveryError):
+    """Raised when a command name cannot be resolved on PATH."""
+
+
 @dataclass(frozen=True)
 class HelpCapture:
     text: str
@@ -52,7 +56,7 @@ def resolve_binary(name: str) -> Path:
         raise DiscoveryError(f"{name!r} is not an executable file")
     found = shutil.which(name)
     if not found:
-        raise DiscoveryError(f"{name!r} was not found on your PATH")
+        raise CommandNotFoundError(f"{name!r} was not found on your PATH")
     return Path(found).resolve()
 
 
