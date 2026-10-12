@@ -16,10 +16,10 @@ def main() -> int:
     )
 
     app = QApplication(sys.argv)
-    app.setApplicationName("cligui")
-    app.setApplicationDisplayName("cligui")
+    app.setApplicationName("BetterCLI")
+    app.setApplicationDisplayName("BetterCLI")
     app.setApplicationVersion(__version__)
-    app.setOrganizationName("cligui")
+    app.setOrganizationName("BetterCLI")
 
     from cligui.ui.main_window import MainWindow
 

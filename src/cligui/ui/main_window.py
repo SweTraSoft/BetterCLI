@@ -6,17 +6,30 @@ import logging
 import shlex
 
 from PySide6.QtCore import QObject, QSize, Qt, QThread, QTimer, Signal
-from PySide6.QtGui import QAction, QColor, QKeySequence, QPalette
+from PySide6.QtGui import (
+    QAction,
+    QColor,
+    QFontMetrics,
+    QKeySequence,
+    QPalette,
+    QPainter,
+    QStandardItemModel,
+)
 from PySide6.QtWidgets import (
     QComboBox,
     QFileDialog,
     QHBoxLayout,
     QLabel,
     QLineEdit,
+    QListWidget,
+    QListWidgetItem,
     QMainWindow,
     QMessageBox,
     QPlainTextEdit,
     QPushButton,
+    QStyle,
+    QStyledItemDelegate,
+    QStyleOptionViewItem,
     QSplitter,
     QVBoxLayout,
     QWidget,
@@ -31,6 +44,7 @@ from cligui.discovery import (
 )
 from cligui.execution import CommandRunner
 from cligui.history import CommandHistory
+from cligui.discovery.runner import resolve_binary
 from cligui.model.spec import CommandSpec
 from cligui.settings import Settings
 from cligui.ui.dialogs import HelpTextDialog, SettingsDialog
@@ -38,6 +52,106 @@ from cligui.ui.form_view import FormView
 from cligui.ui.output_view import OutputView
 
 log = logging.getLogger(__name__)
+
+COMMON_COMMANDS = (
+    "git",
+    "ls",
+    "grep",
+    "find",
+    "cat",
+    "less",
+    "pwd",
+    "mkdir",
+    "cp",
+    "mv",
+    "curl",
+    "ssh",
+    "tar",
+    "python",
+    "pip",
+    "npm",
+    "docker",
+    "make",
+    "jq",
+    "rsync",
+    "head",
+    "tail",
+    "wc",
+    "sort",
+    "uniq",
+    "cut",
+    "tr",
+    "sed",
+    "awk",
+    "xargs",
+    "touch",
+    "rm",
+    "chmod",
+    "df",
+    "du",
+    "ps",
+    "env",
+    "which",
+    "whoami",
+    "man",
+    "zip",
+    "unzip",
+    "node",
+    "npx",
+    "uv",
+    "go",
+    "brew",
+)
+COMMAND_DESCRIPTIONS = {
+    "git": "Track changes and manage version history",
+    "ls": "List files and directories",
+    "grep": "Search text with patterns",
+    "find": "Locate files by name or attributes",
+    "cat": "Print or combine file contents",
+    "less": "Read text one screen at a time",
+    "pwd": "Show the current directory",
+    "mkdir": "Create directories",
+    "cp": "Copy files and directories",
+    "mv": "Move or rename files",
+    "curl": "Transfer data using URLs",
+    "ssh": "Connect to a remote machine",
+    "tar": "Archive or extract files",
+    "python": "Run Python programs",
+    "pip": "Install and manage Python packages",
+    "npm": "Manage Node.js packages and scripts",
+    "docker": "Build and run containers",
+    "make": "Run tasks defined in a Makefile",
+    "jq": "Query and transform JSON",
+    "rsync": "Synchronize files efficiently",
+    "head": "Show the first lines of a file",
+    "tail": "Show the last lines of a file",
+    "wc": "Count lines, words, and bytes",
+    "sort": "Sort lines of text",
+    "uniq": "Find or remove repeated adjacent lines",
+    "cut": "Extract columns from text",
+    "tr": "Translate or remove characters",
+    "sed": "Edit text streams",
+    "awk": "Filter and process structured text",
+    "xargs": "Build commands from input",
+    "touch": "Create files or update timestamps",
+    "rm": "Remove files or directories",
+    "chmod": "Change file permissions",
+    "df": "Show available disk space",
+    "du": "Show file and directory sizes",
+    "ps": "List running processes",
+    "env": "Show or set environment variables",
+    "which": "Locate a command on PATH",
+    "whoami": "Show the current user",
+    "man": "Read command manuals",
+    "zip": "Create compressed archives",
+    "unzip": "Extract ZIP archives",
+    "node": "Run JavaScript with Node.js",
+    "npx": "Run Node.js packages",
+    "uv": "Manage Python projects and tools",
+    "go": "Build and run Go programs",
+    "brew": "Install and manage macOS packages",
+}
+COMMAND_DESCRIPTION_ROLE = Qt.ItemDataRole.UserRole + 1
 
 #: Applied to Run when a command is ready; `palette(highlight)` follows the OS accent.
 RUN_READY_STYLE = (
@@ -87,11 +201,77 @@ class _DiscoveryWorker(QObject):
             self.succeeded.emit(result.spec, result, parent_result)
 
 
+class _CommandSuggestionDelegate(QStyledItemDelegate):
+    def paint(self, painter: QPainter, option: QStyleOptionViewItem, index) -> None:
+        item_option = QStyleOptionViewItem(option)
+        self.initStyleOption(item_option, index)
+        command = item_option.text
+        description = index.data(COMMAND_DESCRIPTION_ROLE) or ""
+        item_option.text = ""
+
+        style = item_option.widget.style() if item_option.widget else self.parent().style()
+        style.drawControl(
+            QStyle.ControlElement.CE_ItemViewItem,
+            item_option,
+            painter,
+            item_option.widget,
+        )
+
+        text_rect = item_option.rect.adjusted(10, 0, -10, 0)
+        selected = bool(item_option.state & QStyle.StateFlag.State_Selected)
+        if selected:
+            text_color = item_option.palette.color(QPalette.ColorRole.HighlightedText)
+        else:
+            text_color = item_option.palette.color(QPalette.ColorRole.Text)
+
+        painter.save()
+        painter.setPen(text_color)
+        command_font = item_option.font
+        command_font.setBold(True)
+        painter.setFont(command_font)
+        command_width = QFontMetrics(command_font).horizontalAdvance(command)
+        command_rect = text_rect.adjusted(
+            0, 0, -max(0, text_rect.width() - command_width), 0
+        )
+        painter.drawText(
+            command_rect,
+            Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter,
+            command,
+        )
+        if description:
+            description_rect = text_rect.adjusted(command_width + 12, 0, 0, 0)
+            description_font = item_option.font
+            description_font.setBold(False)
+            description_font.setPointSizeF(max(8.0, description_font.pointSizeF() - 1))
+            painter.setFont(description_font)
+            description_color = (
+                text_color
+                if selected
+                else item_option.palette.color(QPalette.ColorRole.Mid)
+            )
+            painter.setPen(description_color)
+            visible_description = QFontMetrics(description_font).elidedText(
+                description,
+                Qt.TextElideMode.ElideRight,
+                description_rect.width(),
+            )
+            painter.drawText(
+                description_rect,
+                Qt.AlignmentFlag.AlignVCenter,
+                visible_description,
+            )
+        painter.restore()
+
+    def sizeHint(self, option: QStyleOptionViewItem, index) -> QSize:
+        hint = super().sizeHint(option, index)
+        return QSize(max(hint.width(), 440), max(hint.height(), 30))
+
+
 class MainWindow(QMainWindow):
     def __init__(self) -> None:
         super().__init__()
-        self.setWindowTitle("cligui")
-        self.resize(QSize(1000, 760))
+        self.setWindowTitle("BetterCLI")
+        self.resize(QSize(1220, 760))
 
         self.settings = Settings.load()
         self.service = DiscoveryService(self.settings)
@@ -99,8 +279,12 @@ class MainWindow(QMainWindow):
         self.runner = CommandRunner(self)
         self._spec: CommandSpec | None = None
         self._subcommand_owner: list[str] | None = None
+        self._subcommand_descriptions: dict[str, str] = {}
         self._thread: QThread | None = None
         self._worker: _DiscoveryWorker | None = None
+        self._updating_preview = False
+        self._editor_typed = False
+        self._keep_typed_command = False
         self._search_timer = QTimer(self)
         self._search_timer.setSingleShot(True)
         self._search_timer.setInterval(500)
@@ -113,6 +297,33 @@ class MainWindow(QMainWindow):
     # ----- construction -------------------------------------------------
 
     def _build_ui(self) -> None:
+        self.history_list = QListWidget()
+        self.history_list.setAccessibleName("Recent commands")
+        self.history_list.setTextElideMode(Qt.TextElideMode.ElideRight)
+        self.history_list.setSpacing(2)
+        self.history_list.setStyleSheet(
+            "QListWidget { border: none; background: palette(window); }"
+            "QListWidget::item { padding: 9px 10px; border-radius: 4px; }"
+            "QListWidget::item:hover { background: palette(midlight); }"
+            "QListWidget::item:selected {"
+            " background: palette(highlight); color: palette(highlighted-text); }"
+        )
+        self.history_empty = QLabel("No recent commands")
+        self.history_empty.setWordWrap(True)
+        self.history_empty.setContentsMargins(10, 8, 10, 8)
+
+        sidebar = QWidget()
+        sidebar.setMinimumWidth(160)
+        sidebar_layout = QVBoxLayout(sidebar)
+        sidebar_layout.setContentsMargins(12, 16, 8, 12)
+        history_heading = QLabel("Recent commands")
+        heading_font = history_heading.font()
+        heading_font.setBold(True)
+        history_heading.setFont(heading_font)
+        sidebar_layout.addWidget(history_heading)
+        sidebar_layout.addWidget(self.history_empty)
+        sidebar_layout.addWidget(self.history_list, 1)
+
         self.command_input = QComboBox()
         self.command_input.setEditable(True)
         # History is managed explicitly, so Qt must not insert entries itself.
@@ -122,14 +333,33 @@ class MainWindow(QMainWindow):
             "Command to configure, e.g. rsync, git log, ffmpeg"
         )
         self.command_input.lineEdit().setClearButtonEnabled(True)
-        self.command_input.setToolTip("Recently used commands are listed here")
+        # Qt's inline completion rewrites the typed text and moves the caret back
+        # into it; suggestions stay available through the dropdown instead.
+        self.command_input.setCompleter(None)
+        self.command_input.setToolTip("Common CLI commands are listed here")
+        self.command_input.setItemDelegate(
+            _CommandSuggestionDelegate(self.command_input)
+        )
+        self.command_input.view().setMinimumWidth(460)
         self._command_input_palette = QPalette(self.command_input.lineEdit().palette())
+        self._populate_command_suggestions()
         self._refresh_history()
+
+        self.command_description = QLabel()
+        self.command_description.setMaximumWidth(260)
+        self.command_description.setWordWrap(True)
+        self.command_description.setStyleSheet("color: palette(mid);")
+        self.command_description.hide()
 
         self.discover_button = QPushButton("Discover")
         self.discover_button.setDefault(True)
-        self.refresh_button = QPushButton("Re-scan")
-        self.refresh_button.setToolTip("Ignore the cached options and read --help again")
+        self.help_text_button = QPushButton("Show help text")
+        self.help_text_button.setToolTip(
+            "Show the original --help output these options were read from"
+        )
+        self.help_text_button.setEnabled(False)
+        self.clear_inputs_button = QPushButton("Clear inputs")
+        self.clear_inputs_button.setToolTip("Clear the command and command line")
 
         self.subcommand_combo = QComboBox()
         self.subcommand_combo.setMinimumWidth(240)
@@ -139,26 +369,11 @@ class MainWindow(QMainWindow):
 
         command_row = QHBoxLayout()
         command_row.addWidget(self.command_input, 1)
+        command_row.addWidget(self.command_description)
         command_row.addWidget(self.subcommand_combo)
         command_row.addWidget(self.discover_button)
-        command_row.addWidget(self.refresh_button)
-
-        self.filter_input = QLineEdit()
-        self.filter_input.setPlaceholderText("Filter options…")
-        self.filter_input.setClearButtonEnabled(True)
-
-        self.help_text_button = QPushButton("Help text")
-        self.help_text_button.setToolTip(
-            "Show the original --help output these options were read from"
-        )
-        self.help_text_button.setEnabled(False)
-
-        self.reset_button = QPushButton("Reset")
-
-        tools_row = QHBoxLayout()
-        tools_row.addWidget(self.filter_input, 1)
-        tools_row.addWidget(self.help_text_button)
-        tools_row.addWidget(self.reset_button)
+        command_row.addWidget(self.help_text_button)
+        command_row.addWidget(self.clear_inputs_button)
 
         self.form = FormView()
 
@@ -188,13 +403,12 @@ class MainWindow(QMainWindow):
         upper = QWidget()
         upper_layout = QVBoxLayout(upper)
         upper_layout.setContentsMargins(0, 0, 0, 0)
-        upper_layout.addLayout(tools_row)
         upper_layout.addWidget(self.form, 1)
 
         lower = QWidget()
         lower_layout = QVBoxLayout(lower)
         lower_layout.setContentsMargins(0, 0, 0, 0)
-        lower_layout.addWidget(QLabel("Command"))
+        lower_layout.addWidget(QLabel("Command Line Interface"))
         lower_layout.addWidget(self.command_editor)
         lower_layout.addLayout(run_row)
 
@@ -215,12 +429,20 @@ class MainWindow(QMainWindow):
         splitter.setStretchFactor(0, 3)
         splitter.setStretchFactor(1, 2)
 
-        central = QWidget()
-        layout = QVBoxLayout(central)
+        workspace = QWidget()
+        layout = QVBoxLayout(workspace)
         layout.setContentsMargins(12, 12, 12, 12)
         layout.setSpacing(10)
         layout.addLayout(command_row)
         layout.addWidget(splitter, 1)
+
+        central = QSplitter(Qt.Horizontal)
+        central.addWidget(sidebar)
+        central.addWidget(workspace)
+        central.setChildrenCollapsible(False)
+        central.setStretchFactor(0, 0)
+        central.setStretchFactor(1, 1)
+        central.setSizes([220, 1000])
         self.setCentralWidget(central)
 
         self.statusBar().showMessage("Ready")
@@ -243,19 +465,33 @@ class MainWindow(QMainWindow):
         menu.addAction(clear_cache_action)
 
     def _connect(self) -> None:
+        self.history_list.itemDoubleClicked.connect(self._open_history_command)
+        self.history_list.itemActivated.connect(self._open_history_command)
+        open_history_action = QAction(self.history_list)
+        open_history_action.setShortcuts(
+            [QKeySequence(Qt.Key_Return), QKeySequence(Qt.Key_Enter)]
+        )
+        open_history_action.setShortcutContext(Qt.WidgetShortcut)
+        open_history_action.triggered.connect(
+            lambda: self._open_history_command(self.history_list.currentItem())
+        )
+        self.history_list.addAction(open_history_action)
         self.command_input.lineEdit().textEdited.connect(
             self._on_command_text_edited
         )
+        self.command_input.currentTextChanged.connect(
+            lambda _: self._update_command_description()
+        )
+        self.command_input.currentTextChanged.connect(self._update_command_input_width)
+        self._update_command_input_width(self.command_input.currentText())
         self.command_input.lineEdit().returnPressed.connect(self.discover)
         self.command_input.activated.connect(lambda _: self.discover())
         self.discover_button.clicked.connect(self.discover)
-        self.refresh_button.clicked.connect(lambda: self.discover(refresh=True))
+        self.clear_inputs_button.clicked.connect(self._clear_inputs)
         self.subcommand_combo.activated.connect(self._open_subcommand)
-        self.filter_input.textChanged.connect(self.form.apply_filter)
         self.form.changed.connect(self._update_preview)
-        self.command_editor.textChanged.connect(self._on_command_edited)
+        self.command_editor.textChanged.connect(self._on_command_editor_changed)
         self.help_text_button.clicked.connect(self._show_help_text)
-        self.reset_button.clicked.connect(self.form.reset_values)
         self.cwd_button.clicked.connect(self._choose_cwd)
         self.copy_button.clicked.connect(self._copy_command)
         self.run_button.clicked.connect(self.run)
@@ -265,6 +501,10 @@ class MainWindow(QMainWindow):
         self.runner.output.connect(self.output.append_text)
         self.runner.failed.connect(self._on_run_failed)
         self.runner.finished.connect(self._on_run_finished)
+
+    def _update_command_input_width(self, command: str) -> None:
+        text_width = self.command_input.lineEdit().fontMetrics().horizontalAdvance(command)
+        self.command_input.setMinimumWidth(max(160, text_width + 64))
 
     # ----- discovery ----------------------------------------------------
 
@@ -276,7 +516,6 @@ class MainWindow(QMainWindow):
             return
         try:
             argv = argv or split_command(self.command_input.currentText())
-            self.command_input.setCurrentText(argv[0])
             self.service.preflight(argv)
         except CommandNotFoundError as exc:
             self._set_command_input_invalid(True)
@@ -337,7 +576,7 @@ class MainWindow(QMainWindow):
 
     def _set_discovering(self, busy: bool) -> None:
         self.discover_button.setEnabled(not busy)
-        self.refresh_button.setEnabled(not busy)
+        self.history_list.setEnabled(not busy)
         if busy:
             self.statusBar().showMessage("Reading --help…")
 
@@ -350,14 +589,18 @@ class MainWindow(QMainWindow):
 
     def _on_discovered(self, spec: CommandSpec, result, parent_result=None) -> None:
         self._spec = spec
-        self.form.load(spec)
-        self.filter_input.clear()
+        self._keep_typed_command = self._editor_typed
+        try:
+            self.form.load(spec)
+        finally:
+            self._keep_typed_command = False
         self.help_text_button.setEnabled(bool(spec.raw_help))
         self.history.add(spec.display_name)
         self._refresh_history()
         if parent_result is not None:
             self._refresh_subcommands(parent_result.spec)
         self._refresh_subcommands(spec)
+        self._update_command_description()
         origin = "cache" if result.from_cache else spec.source.value
         parts = [f"{len(spec.options)} options", f"{len(spec.positionals)} arguments"]
         if spec.subcommands:
@@ -400,12 +643,16 @@ class MainWindow(QMainWindow):
                 if child_index >= 0:
                     self.subcommand_combo.setCurrentIndex(child_index)
                 self.subcommand_combo.setVisible(True)
+                self._update_command_description()
                 return
 
         self.subcommand_combo.blockSignals(True)
         self.subcommand_combo.clear()
         if spec.subcommands:
             self._subcommand_owner = list(spec.argv_prefix)
+            self._subcommand_descriptions = {
+                subcommand.name: subcommand.help for subcommand in spec.subcommands
+            }
             self.subcommand_combo.addItem(
                 f"Subcommands ({len(spec.subcommands)})…", userData=None
             )
@@ -413,8 +660,29 @@ class MainWindow(QMainWindow):
                 self.subcommand_combo.addItem(sub.display, userData=sub.name)
         else:
             self._subcommand_owner = None
+            self._subcommand_descriptions = {}
         self.subcommand_combo.blockSignals(False)
         self.subcommand_combo.setVisible(bool(spec.subcommands))
+
+    def _update_command_description(self) -> None:
+        try:
+            argv = split_command(self.command_input.currentText())
+        except DiscoveryError:
+            argv = []
+
+        description = COMMAND_DESCRIPTIONS.get(argv[0], "") if argv else ""
+        selected_subcommand = self.subcommand_combo.currentData()
+        owner = self._subcommand_owner
+        if selected_subcommand and owner and argv[: len(owner)] == owner:
+            if len(argv) == len(owner) or argv[len(owner)] == selected_subcommand:
+                description = (
+                    self._subcommand_descriptions.get(selected_subcommand)
+                    or description
+                )
+
+        self.command_description.setText(description)
+        self.command_description.setToolTip(description)
+        self.command_description.setVisible(bool(description))
 
     def _open_subcommand(self, index: int) -> None:
         name = self.subcommand_combo.itemData(index)
@@ -422,7 +690,7 @@ class MainWindow(QMainWindow):
             return
         parent_argv = self._subcommand_owner or self._spec.argv_prefix
         argv = [*parent_argv, name]
-        self.command_input.setCurrentText(argv[0])
+        self._set_command_text(argv[0])
         self.subcommand_combo.setCurrentIndex(index)
         self.discover(argv=argv)
 
@@ -430,19 +698,65 @@ class MainWindow(QMainWindow):
         self.statusBar().showMessage("Discovery failed")
         self._warn("Could not discover options", message)
 
+    def _populate_command_suggestions(self) -> None:
+        """Fill the suggestion list once; later model edits rewrite the typed text."""
+        self.command_input.addItems(COMMON_COMMANDS)
+        # A selected row makes Qt replace whatever the user typed.
+        self.command_input.setCurrentIndex(-1)
+        model = self.command_input.model()
+        if not isinstance(model, QStandardItemModel):
+            return
+        for index, command in enumerate(COMMON_COMMANDS):
+            item = model.item(index)
+            if item is None:
+                continue
+            description = COMMAND_DESCRIPTIONS.get(command, "")
+            item.setData(description, COMMAND_DESCRIPTION_ROLE)
+            item.setToolTip(description)
+            try:
+                resolve_binary(command)
+            except CommandNotFoundError:
+                item.setEnabled(False)
+
+    def _set_command_text(self, text: str) -> None:
+        """Leave the field alone while the user is typing in it."""
+        if self.command_input.lineEdit().hasFocus():
+            return
+        self.command_input.setCurrentText(text)
+
     def _refresh_history(self) -> None:
-        """Repopulate the dropdown without disturbing what the user has typed."""
-        typed = self.command_input.currentText()
-        self.command_input.blockSignals(True)
-        self.command_input.clear()
-        self.command_input.addItems(self.history.items())
-        self.command_input.setCurrentText(typed)
-        self.command_input.blockSignals(False)
+        """Refresh the recent commands sidebar without touching the command field."""
+        recent_commands = self.history.items()
+        self.history_list.clear()
+        active = self._spec.display_name if self._spec is not None else None
+        for command in recent_commands:
+            item = QListWidgetItem(command, self.history_list)
+            item.setToolTip(command)
+            item.setSizeHint(QSize(0, 40))
+            if command == active:
+                self.history_list.setCurrentItem(item)
+        self.history_empty.setVisible(not recent_commands)
+
+    def _open_history_command(self, item: QListWidgetItem | None) -> None:
+        if item is None or self._thread is not None:
+            return
+        self._set_command_text(item.text())
+        self.discover()
 
     def _clear_history(self) -> None:
         self.history.clear()
         self._refresh_history()
         self.statusBar().showMessage("Command history cleared")
+
+    def _clear_inputs(self) -> None:
+        self._search_timer.stop()
+        self.command_input.setCurrentIndex(-1)
+        self.command_input.clearEditText()
+        self._set_command_input_invalid(False)
+        self.command_editor.clear()
+        self.subcommand_combo.hide()
+        self._subcommand_owner = None
+        self._subcommand_descriptions = {}
 
     # ----- command assembly and execution --------------------------------
 
@@ -453,20 +767,30 @@ class MainWindow(QMainWindow):
             return None
 
     def _update_preview(self) -> None:
-        if self._spec is None:
-            self.command_editor.setPlaceholderText("No command configured yet.")
-            self.command_editor.clear()
-        else:
-            values = self.form.values()
-            outstanding = missing_required(self._spec, values)
-            if outstanding:
-                self.command_editor.setPlaceholderText(
-                    f"{self._spec.display_name}  …  still required: "
-                    f"{', '.join(outstanding)}"
-                )
+        if self._keep_typed_command:
+            self._on_command_edited()
+            return
+        self._updating_preview = True
+        try:
+            if self._spec is None:
+                self.command_editor.setPlaceholderText("No command configured yet.")
                 self.command_editor.clear()
             else:
-                self.command_editor.setPlainText(preview(build_argv(self._spec, values)))
+                values = self.form.values()
+                outstanding = missing_required(self._spec, values)
+                if outstanding:
+                    self.command_editor.setPlaceholderText(
+                        f"{self._spec.display_name}  …  still required: "
+                        f"{', '.join(outstanding)}"
+                    )
+                    self.command_editor.clear()
+                else:
+                    self.command_editor.setPlainText(
+                        preview(build_argv(self._spec, values))
+                    )
+        finally:
+            self._updating_preview = False
+        self._editor_typed = False
         self._on_command_edited()
 
     def _on_command_edited(self) -> None:
@@ -478,6 +802,38 @@ class MainWindow(QMainWindow):
         )
         self.copy_button.setEnabled(argv is not None)
         self._set_run_ready(argv is not None and not self.runner.running)
+
+    def _on_command_editor_changed(self) -> None:
+        self._on_command_edited()
+        if self._updating_preview:
+            return
+        self._editor_typed = True
+
+        try:
+            argv = shlex.split(self.command_editor.toPlainText())
+        except ValueError:
+            self._search_timer.stop()
+            return
+        if not argv:
+            self._search_timer.stop()
+            return
+
+        target = argv[:1]
+        if self._spec is not None:
+            current_prefix = self._spec.argv_prefix
+            if argv[: len(current_prefix)] == current_prefix:
+                remaining = argv[len(current_prefix) :]
+                if not remaining:
+                    return
+                subcommands = {
+                    subcommand.name for subcommand in self._spec.subcommands
+                }
+                if remaining[0] not in subcommands:
+                    return
+                target = [*current_prefix, remaining[0]]
+
+        self._set_command_text(shlex.join(target))
+        self._search_timer.start()
 
     def _set_run_ready(self, ready: bool) -> None:
         """Highlight Run once there is a runnable command, and only one at a time."""

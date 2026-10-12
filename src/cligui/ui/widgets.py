@@ -208,8 +208,8 @@ class PathEditor(Editor):
 
         self.line = QLineEdit()
         self.line.setPlaceholderText(
-            "file or directory path" if allow_directory
-            else "directory path" if directory else "file path"
+            "directory path" if directory and not allow_directory
+            else "file or directory path"
         )
         browse = QPushButton("Browse…")
         browse.setAutoDefault(False)
@@ -224,17 +224,12 @@ class PathEditor(Editor):
         browse.clicked.connect(self._browse)
 
     def _browse(self) -> None:
-        if self._allow_directory:
-            dialog = PathDialog(self.widget, self._multiple)
-            paths = dialog.paths if dialog.exec() == QDialog.Accepted else []
-        elif self._directory:
+        if self._directory and not self._allow_directory:
             chosen = QFileDialog.getExistingDirectory(self.widget, "Choose a directory")
             paths = [chosen] if chosen else []
-        elif self._multiple:
-            paths, _ = QFileDialog.getOpenFileNames(self.widget, "Choose files")
         else:
-            chosen, _ = QFileDialog.getOpenFileName(self.widget, "Choose a file")
-            paths = [chosen] if chosen else []
+            dialog = PathDialog(self.widget, self._multiple)
+            paths = dialog.paths if dialog.exec() == QDialog.Accepted else []
         if paths:
             self.line.setText(", ".join(paths) if self._multiple else paths[0])
 

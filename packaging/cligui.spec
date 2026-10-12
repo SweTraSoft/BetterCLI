@@ -40,7 +40,7 @@ exe = EXE(
     a.scripts,
     [],
     exclude_binaries=True,
-    name="cligui",
+    name="BetterCLI",
     debug=False,
     strip=False,
     upx=False,
@@ -54,17 +54,17 @@ coll = COLLECT(
     a.datas,
     strip=False,
     upx=False,
-    name="cligui",
+    name="BetterCLI",
 )
 
 app = BUNDLE(
     coll,
-    name="cligui.app",
-    icon=None,
-    bundle_identifier="dev.cligui.app",
+    name="BetterCLI.app",
+    icon=str(project_root / "packaging" / "BetterCLI.icns"),
+    bundle_identifier="dev.bettercli.app",
     info_plist={
-        "CFBundleName": "cligui",
-        "CFBundleDisplayName": "cligui",
+        "CFBundleName": "BetterCLI",
+        "CFBundleDisplayName": "BetterCLI",
         "CFBundleShortVersionString": "0.1.0",
         "NSHighResolutionCapable": True,
         "LSMinimumSystemVersion": "12.0",

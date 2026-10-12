@@ -1,0 +1,54 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <defs>
+    <clipPath id="window-clip">
+      <rect x="78" y="82" width="868" height="860" rx="108"/>
+    </clipPath>
+    <filter id="shadow" x="0" y="0" width="120%" height="120%">
+      <feDropShadow dx="0" dy="20" stdDeviation="20" flood-color="#203536" flood-opacity="0.22"/>
+    </filter>
+  </defs>
+
+  <rect width="1024" height="1024" fill="#CFE84F"/>
+  <rect x="78" y="82" width="868" height="860" rx="108" fill="#F8F6E9" stroke="#203536" stroke-width="14" filter="url(#shadow)"/>
+
+  <g clip-path="url(#window-clip)">
+    <path d="M78 190V82h868v108z" fill="#203536"/>
+    <rect x="128" y="104" width="116" height="64" rx="18" fill="#CFE84F"/>
+    <path d="m151 123 20 13-20 13m30 0h38" fill="none" stroke="#203536" stroke-width="9" stroke-linecap="round" stroke-linejoin="round"/>
+    <text x="282" y="160" fill="#F8F6E9" font-family="Avenir Next, Helvetica Neue, sans-serif" font-size="74" font-weight="800">BetterCLI</text>
+    <path d="M284 174h320" fill="none" stroke="#67C7B7" stroke-width="6" stroke-linecap="round"/>
+
+    <rect x="132" y="238" width="350" height="430" rx="34" fill="#203536"/>
+    <circle cx="169" cy="276" r="8" fill="#F4775B"/>
+    <circle cx="196" cy="276" r="8" fill="#CFE84F"/>
+    <circle cx="223" cy="276" r="8" fill="#67C7B7"/>
+    <path d="m174 360 48 42-48 42" fill="none" stroke="#CFE84F" stroke-width="18" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M245 444h45" fill="none" stroke="#CFE84F" stroke-width="18" stroke-linecap="round"/>
+    <text x="171" y="516" fill="#F8F6E9" font-family="SFMono-Regular, Menlo, monospace" font-size="34" font-weight="600">git status</text>
+    <path d="M171 548h246" fill="none" stroke="#59706D" stroke-width="4" stroke-linecap="round"/>
+    <text x="171" y="601" fill="#67C7B7" font-family="SFMono-Regular, Menlo, monospace" font-size="28">--short</text>
+    <path d="M171 628h112" fill="none" stroke="#59706D" stroke-width="4" stroke-linecap="round"/>
+
+    <rect x="542" y="238" width="350" height="430" rx="34" fill="#FFFFFF" stroke="#D9DED0" stroke-width="5"/>
+    <text x="580" y="298" fill="#203536" font-family="Avenir Next, Helvetica Neue, sans-serif" font-size="31" font-weight="700">Command form</text>
+    <text x="580" y="357" fill="#52615C" font-family="Avenir Next, Helvetica Neue, sans-serif" font-size="23" font-weight="600">Repository</text>
+    <rect x="580" y="373" width="274" height="58" rx="12" fill="#F8F6E9" stroke="#B9C5B6" stroke-width="4"/>
+    <text x="600" y="411" fill="#203536" font-family="SFMono-Regular, Menlo, monospace" font-size="23">./project</text>
+    <text x="580" y="478" fill="#52615C" font-family="Avenir Next, Helvetica Neue, sans-serif" font-size="23" font-weight="600">Show details</text>
+    <rect x="580" y="495" width="274" height="58" rx="12" fill="#F8F6E9" stroke="#B9C5B6" stroke-width="4"/>
+    <path d="M604 524h14m-7-7v14" fill="none" stroke="#2F8C7F" stroke-width="4" stroke-linecap="round"/>
+    <text x="633" y="533" fill="#203536" font-family="Avenir Next, Helvetica Neue, sans-serif" font-size="22">Include untracked</text>
+    <rect x="580" y="584" width="150" height="54" rx="15" fill="#2F8C7F"/>
+    <text x="618" y="620" fill="#FFFFFF" font-family="Avenir Next, Helvetica Neue, sans-serif" font-size="24" font-weight="700">Run</text>
+
+    <circle cx="512" cy="453" r="49" fill="#F4775B" stroke="#F8F6E9" stroke-width="8"/>
+    <path d="M490 453h40m-16-16 16 16-16 16" fill="none" stroke="#203536" stroke-width="9" stroke-linecap="round" stroke-linejoin="round"/>
+
+    <rect x="132" y="720" width="760" height="142" rx="34" fill="#E7ECD8"/>
+    <circle cx="190" cy="791" r="26" fill="#2F8C7F"/>
+    <path d="m178 791 9 9 17-19" fill="none" stroke="#FFFFFF" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"/>
+    <text x="238" y="784" fill="#203536" font-family="Avenir Next, Helvetica Neue, sans-serif" font-size="28" font-weight="700">Ready to run</text>
+    <text x="238" y="824" fill="#52615C" font-family="Avenir Next, Helvetica Neue, sans-serif" font-size="22">Review options, then execute safely</text>
+    <path d="M810 782h38m-14-14 14 14-14 14" fill="none" stroke="#2F8C7F" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"/>
+  </g>
+</svg>

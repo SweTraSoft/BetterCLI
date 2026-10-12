@@ -2,7 +2,7 @@
     "version": "0.2.0",
     "configurations": [
         {
-            "name": "Run cligui",
+            "name": "Run BetterCLI",
             "type": "debugpy",
             "request": "launch",
             "module": "cligui.app",
@@ -10,7 +10,7 @@
             "cwd": "${workspaceFolder}",
             "console": "integratedTerminal",
             "justMyCode": true,
-            "preLaunchTask": "Prepare cligui"
+            "preLaunchTask": "Prepare BetterCLI"
         }
     ]
 }

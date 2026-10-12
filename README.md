@@ -1,6 +1,6 @@
-# cligui
+# BetterCLI
 
-Turn any command-line tool into a graphical form. Type a command, and cligui
+Turn any command-line tool into a graphical form. Type a command, and BetterCLI
 reads its `--help` (and man page), works out which options it accepts, and
 builds a form for it on the fly. Configure what you want, review the assembled
 command, then run it with live output.
@@ -11,7 +11,7 @@ Requires [uv](https://docs.astral.sh/uv/).
 
 ```sh
 uv sync
-uv run cligui
+uv run bettercli
 ```
 
 ## How it works
@@ -58,7 +58,7 @@ common tools never reach it.
 ### Run in VS Code
 
 Install the Microsoft **Python** and **Python Debugger** extensions. Open
-**Run and Debug** in the left sidebar, select **Run cligui**, and click the
+**Run and Debug** in the left sidebar, select **Run BetterCLI**, and click the
 green play button (or press **F5**). VS Code runs `uv sync` before launching
 the GUI with the project's virtual environment. Python does not need a
 separate compilation step to run the app.
@@ -76,7 +76,7 @@ real tools plus two synthetic files covering argparse and click conventions.
 
 ```sh
 uv run pyinstaller packaging/cligui.spec
-open dist/cligui.app
+open dist/BetterCLI.app
 ```
 
 ## Layout

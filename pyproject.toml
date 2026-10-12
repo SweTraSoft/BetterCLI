@@ -1,5 +1,5 @@
 [project]
-name = "cligui"
+name = "bettercli"
 version = "0.1.0"
 description = "Turn any CLI command into an on-the-fly graphical form."
 readme = "README.md"
@@ -15,7 +15,7 @@ dependencies = [
 ]
 
 [project.scripts]
-cligui = "cligui.app:main"
+bettercli = "cligui.app:main"
 
 [dependency-groups]
 dev = [
@@ -26,6 +26,9 @@ dev = [
 [build-system]
 requires = ["uv_build>=0.12.23,<0.13.0"]
 build-backend = "uv_build"
+
+[tool.uv.build-backend]
+module-name = "cligui"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

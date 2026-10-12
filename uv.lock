@@ -34,6 +34,37 @@ wheels = [
 ]
 
 [[package]]
+name = "bettercli"
+version = "0.1.0"
+source = { editable = "." }
+dependencies = [
+    { name = "keyring" },
+    { name = "openai" },
+    { name = "pydantic" },
+    { name = "pyside6" },
+]
+
+[package.dev-dependencies]
+dev = [
+    { name = "pyinstaller" },
+    { name = "pytest" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "keyring", specifier = ">=25.0" },
+    { name = "openai", specifier = ">=1.40" },
+    { name = "pydantic", specifier = ">=2.7" },
+    { name = "pyside6", specifier = ">=6.7" },
+]
+
+[package.metadata.requires-dev]
+dev = [
+    { name = "pyinstaller", specifier = ">=6.6" },
+    { name = "pytest", specifier = ">=8.0" },
+]
+
+[[package]]
 name = "cffi"
 version = "2.1.1"
 source = { registry = "https://pypi.org/simple" }
@@ -86,37 +117,6 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/52/86/2976131c639aead931c5bee5aba67e4b09fbeb8018b6f282f70803f923a7/cffi-2.1.1-cp315-cp315t-manylinux2014_x86_64.manylinux_2_17_x86_64.whl", hash = "sha256:363e05fa78e15116c3c32c210ee36884fd6b9afa6d440e47112c3bd511d64cb6", size = 223835, upload-time = "2026-08-03T21:21:07.539Z" },
     { url = "https://files.pythonhosted.org/packages/ac/0c/33a7aeab2f9c76918c52e084beb39c570db3588133412929e8ec06fab90b/cffi-2.1.1-cp315-cp315t-musllinux_1_2_aarch64.whl", hash = "sha256:770de9db11e84213beec501cfcaa013b019820ca881e03344dea5844f7876d94", size = 226705, upload-time = "2026-08-03T21:21:08.774Z" },
     { url = "https://files.pythonhosted.org/packages/e3/26/2cde30fdde421130bfc18f70395731a6e6b2053c6a1978a5258ff04e72fa/cffi-2.1.1-cp315-cp315t-musllinux_1_2_x86_64.whl", hash = "sha256:7da0c5eff80f0197f3b3d1232ec5a682a9325f4ae9016a78f5f5ca35f9ced1f5", size = 225539, upload-time = "2026-08-03T21:21:09.911Z" },
-]
-
-[[package]]
-name = "cligui"
-version = "0.1.0"
-source = { editable = "." }
-dependencies = [
-    { name = "keyring" },
-    { name = "openai" },
-    { name = "pydantic" },
-    { name = "pyside6" },
-]
-
-[package.dev-dependencies]
-dev = [
-    { name = "pyinstaller" },
-    { name = "pytest" },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "keyring", specifier = ">=25.0" },
-    { name = "openai", specifier = ">=1.40" },
-    { name = "pydantic", specifier = ">=2.7" },
-    { name = "pyside6", specifier = ">=6.7" },
-]
-
-[package.metadata.requires-dev]
-dev = [
-    { name = "pyinstaller", specifier = ">=6.6" },
-    { name = "pytest", specifier = ">=8.0" },
 ]
 
 [[package]]
