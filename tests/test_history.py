@@ -49,6 +49,40 @@ class TestCommandHistory:
         store(tmp_path).add("rsync")
         assert store(tmp_path).items() == ["rsync"]
 
+    def test_session_persists_with_command(self, tmp_path: Path):
+        history = store(tmp_path)
+        history.add("git log")
+        history.update_session(
+            "git log", command_line="git log --oneline", cwd="/tmp", output="commit\n"
+        )
+        history.add("git log")
+
+        assert store(tmp_path).session("git log") == {
+            "command": "git log",
+            "command_line": "git log --oneline",
+            "cwd": "/tmp",
+            "output": "commit\n",
+        }
+
+    def test_sessions_keep_separate_output(self, tmp_path: Path):
+        history = store(tmp_path)
+        history.add("ls")
+        history.add("pwd")
+        history.update_session("ls", output="file.txt\n")
+        history.update_session("pwd", output="/tmp\n")
+
+        assert store(tmp_path).session("ls")["output"] == "file.txt\n"
+        assert store(tmp_path).session("pwd")["output"] == "/tmp\n"
+
+    def test_old_history_loads_with_empty_output(self, tmp_path: Path):
+        path = tmp_path / "history.json"
+        path.write_text('["ls", "git log"]', encoding="utf-8")
+
+        history = CommandHistory(path)
+
+        assert history.items() == ["ls", "git log"]
+        assert history.session("git log")["output"] == ""
+
     def test_clear(self, tmp_path: Path):
         h = store(tmp_path)
         h.add("ls")

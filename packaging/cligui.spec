@@ -4,12 +4,16 @@
 from pathlib import Path
 
 project_root = Path(SPECPATH).parent
+icon_assets = project_root / "packaging" / "app-icons"
 
 a = Analysis(
     [str(project_root / "src" / "cligui" / "app.py")],
     pathex=[str(project_root / "src")],
     binaries=[],
-    datas=[],
+    datas=[
+        (str(icon_assets / "BetterCLI-light.png"), "."),
+        (str(icon_assets / "BetterCLI-dark.png"), "."),
+    ],
     hiddenimports=["keyring.backends.macOS", "keyring.backends.SecretService"],
     hookspath=[],
     runtime_hooks=[],

@@ -49,6 +49,12 @@ common tools never reach it.
 - Only one command per window. Pipes, redirection and `&&` are rejected by
   design — there is no shell anywhere in the execution path.
 - Subcommands work by typing the full path, e.g. `git log` or `docker compose`.
+- Recent commands in the left sidebar retain their output, last executed command,
+  and working directory across app restarts. Double-click an entry or press Enter
+  to reopen it without running it. Repeated runs append to that command's output;
+  Clear removes the active command's saved output. These transcripts are stored
+  locally and may contain sensitive command output. Clear command history in the
+  Tools menu to remove all saved sessions.
 - Interactive and full-screen programs (`vim`, `top`, `ssh` sessions, anything
   needing a password) will not work, because the output pane is not a terminal.
 - Safety warnings are advisory and can always be overridden.

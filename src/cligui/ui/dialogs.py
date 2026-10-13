@@ -31,6 +31,9 @@ class SettingsDialog(QDialog):
         self._settings = settings
 
         form = QFormLayout()
+        self._dark_mode = QCheckBox("Use dark appearance")
+        self._dark_mode.setChecked(settings.dark_mode)
+
         self._llm_enabled = QCheckBox("Use DeepSeek when --help cannot be parsed")
         self._llm_enabled.setChecked(settings.llm_enabled)
 
@@ -48,6 +51,7 @@ class SettingsDialog(QDialog):
         self._timeout.setSuffix(" s")
         self._timeout.setValue(settings.discovery_timeout)
 
+        form.addRow("Appearance", self._dark_mode)
         form.addRow("LLM fallback", self._llm_enabled)
         form.addRow("API key", self._api_key)
         form.addRow("Base URL", self._base_url)
@@ -71,6 +75,7 @@ class SettingsDialog(QDialog):
         layout.addWidget(buttons)
 
     def accept(self) -> None:
+        self._settings.dark_mode = self._dark_mode.isChecked()
         self._settings.llm_enabled = self._llm_enabled.isChecked()
         self._settings.base_url = self._base_url.text().strip() or self._settings.base_url
         self._settings.model = self._model.text().strip() or self._settings.model

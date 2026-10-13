@@ -7,6 +7,15 @@ from PySide6.QtWidgets import QPlainTextEdit, QWidget
 
 #: Keeps a long-running command from growing the document without bound.
 MAX_BLOCKS = 5000
+ROUNDED_FIELD_STYLE = (
+    "QPlainTextEdit, QLineEdit {"
+    " background: palette(base);"
+    " border: 1px solid palette(midlight);"
+    " border-radius: 6px;"
+    " padding: 8px;"
+    "}"
+    "QPlainTextEdit { font-family: Menlo, monospace; }"
+)
 
 
 class OutputView(QPlainTextEdit):
@@ -19,6 +28,7 @@ class OutputView(QPlainTextEdit):
         font.setStyleHint(QFont.Monospace)
         font.setPointSize(12)
         self.setFont(font)
+        self.setStyleSheet(ROUNDED_FIELD_STYLE)
 
     def append_text(self, text: str) -> None:
         at_bottom = (

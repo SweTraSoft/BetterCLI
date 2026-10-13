@@ -2,7 +2,7 @@ from types import SimpleNamespace
 from unittest.mock import Mock
 
 import pytest
-from PySide6.QtCore import Qt
+from PySide6.QtCore import QPoint, Qt
 from PySide6.QtGui import QPalette
 from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QApplication
@@ -51,6 +51,96 @@ def test_window_title_is_bettercli(window):
     assert window.windowTitle() == "BetterCLI"
 
 
+def test_explore_heading_is_above_command_row(window):
+    layout = window.centralWidget().widget(1).layout()
+
+    assert layout.itemAt(0).widget() is window.explore_heading
+    assert layout.itemAt(1).layout() is not None
+
+
+def test_section_headings_are_bold_and_aligned_with_fields(window):
+    window.show()
+    QApplication.processEvents()
+
+    heading_fields = (
+        (window.explore_heading, window.command_input),
+        (window.command_line_heading, window.command_editor),
+        (window.output_heading, window.output),
+    )
+    for heading, field in heading_fields:
+        assert heading.font().bold()
+        assert heading.mapTo(window, QPoint(0, 0)).x() == field.mapTo(
+            window, QPoint(0, 0)
+        ).x()
+
+
+def test_section_heading_spacing_is_consistent(window):
+    window.show()
+    QApplication.processEvents()
+
+    heading_fields = (
+        (window.explore_heading, window.command_input),
+        (window.command_line_heading, window.command_editor),
+        (window.output_heading, window.output),
+    )
+    gaps = [
+        field.mapTo(window, QPoint(0, 0)).y()
+        - heading.mapTo(window, QPoint(0, 0)).y()
+        - heading.height()
+        for heading, field in heading_fields
+    ]
+
+    assert gaps == [10, 10, 10]
+
+
+def test_command_output_and_working_directory_fields_share_rounded_style(window):
+    style = window.command_editor.styleSheet()
+
+    assert style == window.output.styleSheet()
+    assert style == window.cwd_input.styleSheet()
+    assert "border-radius: 6px" in style
+
+
+def test_settings_button_is_at_bottom_of_sidebar_and_opens_dialog(window, monkeypatch):
+    sidebar_layout = window.settings_button.parentWidget().layout()
+    assert sidebar_layout.itemAt(sidebar_layout.count() - 1).widget() is window.settings_button
+
+    accepted = main_window.SettingsDialog.Accepted
+    dialog = Mock()
+    dialog.exec.return_value = accepted
+    dialog_class = Mock(return_value=dialog)
+    dialog_class.Accepted = accepted
+    monkeypatch.setattr(main_window, "SettingsDialog", dialog_class)
+
+    window.settings_button.click()
+
+    dialog_class.assert_called_once_with(window.settings, window)
+    dialog.exec.assert_called_once_with()
+
+
+def test_saving_dark_mode_applies_palette_without_restart(window, monkeypatch):
+    accepted = main_window.SettingsDialog.Accepted
+    dialog = Mock()
+    dialog.exec.side_effect = lambda: (
+        setattr(window.settings, "dark_mode", True),
+        accepted,
+    )[1]
+    dialog_class = Mock(return_value=dialog)
+    dialog_class.Accepted = accepted
+    apply_theme = Mock()
+    monkeypatch.setattr(main_window, "SettingsDialog", dialog_class)
+    monkeypatch.setattr(main_window, "apply_theme", apply_theme)
+
+    window._open_settings()
+
+    apply_theme.assert_called_once_with(QApplication.instance(), True)
+    assert window._command_input_palette.color(QPalette.ColorRole.Base) == (
+        window.command_input.lineEdit()
+        .palette()
+        .color(QPalette.ColorRole.Base)
+    )
+
+
 @pytest.mark.parametrize("command", ["openclaw", "/usr/local/bin/my-long-command-name"])
 def test_command_input_remains_readable_with_subcommands(window, command):
     window.command_input.setCurrentText(command)
@@ -84,6 +174,7 @@ def test_history_sidebar_shows_latest_commands_and_preserves_input(window):
         "curl", "git log"
     ]
     assert window.history_list.item(1).toolTip() == "git log"
+    assert window.history_list.item(0).sizeHint().height() == 30
     assert [window.command_input.itemText(index) for index in range(window.command_input.count())] == list(
         main_window.COMMON_COMMANDS
     )
@@ -157,8 +248,88 @@ def test_history_sidebar_loads_saved_commands_on_reopen(window):
         reopened.close()
 
 
-def test_history_sidebar_single_click_only_selects_command(window, monkeypatch):
+def test_history_restores_output_command_and_directory_after_reopen(window, monkeypatch):
+    spec = CommandSpec(argv_prefix=["git", "log"])
+    result = SimpleNamespace(from_cache=False, note=None)
+    window._on_discovered(spec, result)
+    window.command_editor.setPlainText("git log --oneline")
+    window.cwd_input.setText("/tmp")
+    window.run()
+    window.runner.output.emit("saved commit\n")
+    window.runner.failed.emit("example warning")
+    window.runner.finished.emit(1)
+    transcript = window.output.toPlainText()
+    reopened = main_window.MainWindow()
+    monkeypatch.setattr(reopened, "discover", Mock())
+    try:
+        reopened._open_history_command(reopened.history_list.item(0))
+        reopened._on_discovered(spec, result)
+
+        assert reopened.output.toPlainText() == transcript
+        assert "$ git log --oneline" in transcript
+        assert "saved commit" in transcript
+        assert "example warning" in transcript
+        assert "Exited with code 1" in transcript
+        assert reopened.command_editor.toPlainText() == "git log --oneline"
+        assert reopened.cwd_input.text() == "/tmp"
+        assert not reopened.runner.running
+    finally:
+        reopened.close()
+
+
+def test_running_output_stays_with_original_session_when_switching(window):
+    result = SimpleNamespace(from_cache=False, note=None)
+    window._on_discovered(CommandSpec(argv_prefix=["git", "log"]), result)
+    window.run()
+    window.runner.output.emit("first chunk\n")
+
+    window._on_discovered(CommandSpec(argv_prefix=["ls"]), result)
+    window.runner.output.emit("later chunk\n")
+    window.runner.finished.emit(0)
+
+    assert window.output.toPlainText() == ""
+    assert window.history.session("ls")["output"] == ""
+    transcript = CommandHistory(window.history.path).session("git log")["output"]
+    assert "first chunk\nlater chunk\n" in transcript
+    assert "Finished successfully" in transcript
+    window._activate_session("git log")
+    assert window.output.toPlainText() == transcript
+
+
+def test_clear_output_only_clears_active_saved_session(window):
+    result = SimpleNamespace(from_cache=False, note=None)
+    window._on_discovered(CommandSpec(argv_prefix=["git", "log"]), result)
+    window.output.append_text("commit\n")
+    window._on_discovered(CommandSpec(argv_prefix=["ls"]), result)
+    window.output.append_text("file.txt\n")
+
+    window.clear_output_button.click()
+
+    assert CommandHistory(window.history.path).session("ls")["output"] == ""
+    assert window.history.session("git log")["output"] == "commit\n"
+
+
+def test_repeated_runs_append_to_saved_session(window):
+    window.command_editor.setPlainText("echo hello")
+    window._search_timer.stop()
+    for unused in range(2):
+        window.run()
+        window.runner.output.emit("hello\n")
+        window.runner.finished.emit(0)
+
+    transcript = CommandHistory(window.history.path).session("echo")["output"]
+    assert transcript.count("$ echo hello") == 2
+    assert transcript.count("Finished successfully") == 2
+
+
+def test_history_sidebar_single_click_opens_saved_session(window, monkeypatch):
     window.history.add("git log")
+    window.history.update_session(
+        "git log",
+        command_line="git log --oneline",
+        cwd="/tmp",
+        output="saved commit\n",
+    )
     window._refresh_history()
     discover = Mock()
     monkeypatch.setattr(window, "discover", discover)
@@ -173,16 +344,21 @@ def test_history_sidebar_single_click_only_selects_command(window, monkeypatch):
     )
 
     assert window.history_list.currentItem() is item
+    assert window.command_input.currentText() == "git log"
+    assert window.command_editor.toPlainText() == "git log --oneline"
+    assert window.cwd_input.text() == "/tmp"
+    assert window.output.toPlainText() == "saved commit\n"
     discover.assert_not_called()
 
 
 @pytest.mark.parametrize("keyboard", [False, True])
-def test_history_sidebar_opens_subcommand_without_running(window, monkeypatch, keyboard):
+def test_history_sidebar_restores_subcommand_without_discovery(window, monkeypatch, keyboard):
     window.history.add("git log")
     window._refresh_history()
     preflight = Mock(return_value="/usr/bin/git")
     monkeypatch.setattr(window.service, "preflight", preflight)
-    monkeypatch.setattr(main_window.QThread, "start", Mock())
+    start = Mock()
+    monkeypatch.setattr(main_window.QThread, "start", start)
     window.show()
     QApplication.processEvents()
     item = window.history_list.item(0)
@@ -200,10 +376,9 @@ def test_history_sidebar_opens_subcommand_without_running(window, monkeypatch, k
             pos=position,
         )
 
-    preflight.assert_called_once_with(["git", "log"])
+    preflight.assert_not_called()
+    start.assert_not_called()
     window.runner.start.assert_not_called()
-    assert not window.history_list.isEnabled()
-    window._on_thread_finished()
     assert window.history_list.isEnabled()
 
 
@@ -217,13 +392,17 @@ def test_discovery_updates_and_selects_history_sidebar(window):
 
 
 def test_command_description_shows_top_level_and_subcommand_help(window):
+    window.resize(1100, 760)
+    window.show()
     window.command_input.setCurrentText("git")
+    QApplication.processEvents()
 
     assert window.command_description.text() == "Track changes and manage version history"
 
+    long_help = "Show commit logs and inspect changes " * 12
     parent_spec = CommandSpec(
         argv_prefix=["git"],
-        subcommands=[SubcommandSpec(name="log", help="Show commit logs")],
+        subcommands=[SubcommandSpec(name="log", help=long_help)],
     )
     child_spec = CommandSpec(argv_prefix=["git", "log"])
     window._on_discovered(
@@ -232,7 +411,22 @@ def test_command_description_shows_top_level_and_subcommand_help(window):
         parent_result=SimpleNamespace(spec=parent_spec),
     )
 
-    assert window.command_description.text() == "Show commit logs"
+    main_top = window.command_input.mapTo(window, QPoint(0, 0)).y()
+    subcommand_top = window.subcommand_combo.mapTo(window, QPoint(0, 0)).y()
+    main_right = (
+        window.command_input.mapTo(window, QPoint(0, 0)).x()
+        + window.command_input.width()
+    )
+    subcommand_right = (
+        window.subcommand_combo.mapTo(window, QPoint(0, 0)).x()
+        + window.subcommand_combo.width()
+    )
+    description_top = window.command_description.mapTo(window, QPoint(0, 0)).y()
+    assert window.command_description.text() == long_help
+    assert main_top == subcommand_top
+    assert window.command_input.height() == window.subcommand_combo.height()
+    assert description_top >= main_top + window.command_input.height()
+    assert window.command_description.width() >= subcommand_right - main_right
 
 
 def test_clear_history_updates_sidebar_and_saved_history(window):
@@ -247,6 +441,7 @@ def test_clear_history_updates_sidebar_and_saved_history(window):
 
 
 def test_clear_inputs_clears_top_command_and_command_line(window):
+    assert window.clear_inputs_button.text() == "New"
     window.command_input.setCurrentText("git log")
     window.command_editor.setPlainText("git log --oneline")
     window._search_timer.start()
@@ -470,6 +665,47 @@ def test_initial_child_command_discovers_parent_subcommands(window, monkeypatch)
     assert window.command_input.currentText() == "git clone"
     assert window._worker._parent_argv == ["git"]
     start.assert_called_once_with()
+
+
+@pytest.mark.parametrize("owner", [None, ["git"]])
+def test_initial_nested_command_discovers_immediate_parent(window, monkeypatch, owner):
+    monkeypatch.setattr(window.service, "preflight", Mock())
+    monkeypatch.setattr(main_window.QThread, "start", Mock())
+    window._subcommand_owner = owner
+    window.command_input.setCurrentText("git remote add")
+
+    window.discover()
+
+    assert window._worker._parent_argv == ["git", "remote"]
+
+
+def test_nested_subcommands_keep_full_parent_path(window, monkeypatch):
+    discover = Mock()
+    monkeypatch.setattr(window, "discover", discover)
+    result = SimpleNamespace(from_cache=False, note=None)
+    window._on_discovered(
+        CommandSpec(argv_prefix=["git"], subcommands=[SubcommandSpec(name="remote")]),
+        result,
+    )
+    window._open_subcommand(1)
+    discover.assert_called_with(argv=["git", "remote"])
+
+    window._on_discovered(
+        CommandSpec(
+            argv_prefix=["git", "remote"],
+            subcommands=[SubcommandSpec(name="add", help="Add a remote")],
+        ),
+        result,
+    )
+    window._open_subcommand(1)
+
+    discover.assert_called_with(argv=["git", "remote", "add"])
+    assert window.command_input.currentText() == "git remote"
+    window._on_discovered(CommandSpec(argv_prefix=["git", "remote", "add"]), result)
+    assert window.subcommand_combo.currentData() == "add"
+    assert not window.subcommand_combo.isHidden()
+    assert window.command_description.text() == "Add a remote"
+    assert window.command_editor.toPlainText() == "git remote add"
 
 
 def test_initial_child_discovery_populates_and_selects_parent_subcommand(window):

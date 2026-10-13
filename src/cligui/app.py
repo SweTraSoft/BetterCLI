@@ -8,6 +8,8 @@ import sys
 from PySide6.QtWidgets import QApplication
 
 from cligui import __version__
+from cligui.settings import Settings
+from cligui.ui.theme import apply_theme
 
 
 def main() -> int:
@@ -16,6 +18,8 @@ def main() -> int:
     )
 
     app = QApplication(sys.argv)
+    settings = Settings.load()
+    apply_theme(app, settings.dark_mode)
     app.setApplicationName("BetterCLI")
     app.setApplicationDisplayName("BetterCLI")
     app.setApplicationVersion(__version__)

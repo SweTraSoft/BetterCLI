@@ -16,6 +16,7 @@ from PySide6.QtGui import (
     QStandardItemModel,
 )
 from PySide6.QtWidgets import (
+    QApplication,
     QComboBox,
     QFileDialog,
     QHBoxLayout,
@@ -49,7 +50,8 @@ from cligui.model.spec import CommandSpec
 from cligui.settings import Settings
 from cligui.ui.dialogs import HelpTextDialog, SettingsDialog
 from cligui.ui.form_view import FormView
-from cligui.ui.output_view import OutputView
+from cligui.ui.output_view import MAX_BLOCKS, ROUNDED_FIELD_STYLE, OutputView
+from cligui.ui.theme import apply_theme
 
 log = logging.getLogger(__name__)
 
@@ -277,6 +279,8 @@ class MainWindow(QMainWindow):
         self.service = DiscoveryService(self.settings)
         self.history = CommandHistory()
         self.runner = CommandRunner(self)
+        self._active_session: str | None = None
+        self._running_session: str | None = None
         self._spec: CommandSpec | None = None
         self._subcommand_owner: list[str] | None = None
         self._subcommand_descriptions: dict[str, str] = {}
@@ -300,10 +304,10 @@ class MainWindow(QMainWindow):
         self.history_list = QListWidget()
         self.history_list.setAccessibleName("Recent commands")
         self.history_list.setTextElideMode(Qt.TextElideMode.ElideRight)
-        self.history_list.setSpacing(2)
+        self.history_list.setSpacing(1)
         self.history_list.setStyleSheet(
             "QListWidget { border: none; background: palette(window); }"
-            "QListWidget::item { padding: 9px 10px; border-radius: 4px; }"
+            "QListWidget::item { padding: 5px 10px; border-radius: 4px; }"
             "QListWidget::item:hover { background: palette(midlight); }"
             "QListWidget::item:selected {"
             " background: palette(highlight); color: palette(highlighted-text); }"
@@ -323,6 +327,8 @@ class MainWindow(QMainWindow):
         sidebar_layout.addWidget(history_heading)
         sidebar_layout.addWidget(self.history_empty)
         sidebar_layout.addWidget(self.history_list, 1)
+        self.settings_button = QPushButton("Settings…")
+        sidebar_layout.addWidget(self.settings_button)
 
         self.command_input = QComboBox()
         self.command_input.setEditable(True)
@@ -346,7 +352,6 @@ class MainWindow(QMainWindow):
         self._refresh_history()
 
         self.command_description = QLabel()
-        self.command_description.setMaximumWidth(260)
         self.command_description.setWordWrap(True)
         self.command_description.setStyleSheet("color: palette(mid);")
         self.command_description.hide()
@@ -358,19 +363,36 @@ class MainWindow(QMainWindow):
             "Show the original --help output these options were read from"
         )
         self.help_text_button.setEnabled(False)
-        self.clear_inputs_button = QPushButton("Clear inputs")
-        self.clear_inputs_button.setToolTip("Clear the command and command line")
+        self.clear_inputs_button = QPushButton("New")
+        self.clear_inputs_button.setToolTip("Start a new command")
 
         self.subcommand_combo = QComboBox()
         self.subcommand_combo.setMinimumWidth(240)
         self.subcommand_combo.setMaxVisibleItems(25)
         self.subcommand_combo.setToolTip("Open a subcommand of the current command")
         self.subcommand_combo.hide()
+        command_field_height = max(
+            self.command_input.sizeHint().height(),
+            self.subcommand_combo.sizeHint().height(),
+        )
+        self.command_input.setFixedHeight(command_field_height)
+        self.subcommand_combo.setFixedHeight(command_field_height)
+
+        command_fields_row = QHBoxLayout()
+        command_fields_row.setContentsMargins(0, 0, 0, 0)
+        command_fields_row.addWidget(self.command_input, 1)
+        command_fields_row.addWidget(self.subcommand_combo)
+
+        command_fields_layout = QVBoxLayout()
+        command_fields_layout.setContentsMargins(0, 0, 0, 0)
+        command_fields_layout.setSpacing(6)
+        command_fields_layout.setAlignment(Qt.AlignmentFlag.AlignTop)
+        command_fields_layout.addLayout(command_fields_row)
+        command_fields_layout.addWidget(self.command_description)
 
         command_row = QHBoxLayout()
-        command_row.addWidget(self.command_input, 1)
-        command_row.addWidget(self.command_description)
-        command_row.addWidget(self.subcommand_combo)
+        command_row.setContentsMargins(0, 0, 0, 0)
+        command_row.addLayout(command_fields_layout, 1)
         command_row.addWidget(self.discover_button)
         command_row.addWidget(self.help_text_button)
         command_row.addWidget(self.clear_inputs_button)
@@ -380,13 +402,11 @@ class MainWindow(QMainWindow):
         self.command_editor = QPlainTextEdit()
         self.command_editor.setTabChangesFocus(True)
         self.command_editor.setFixedHeight(84)
-        self.command_editor.setStyleSheet(
-            "font-family: Menlo, monospace;"
-            "background: palette(base); padding: 8px; border-radius: 4px;"
-        )
+        self.command_editor.setStyleSheet(ROUNDED_FIELD_STYLE)
 
         self.cwd_input = QLineEdit()
         self.cwd_input.setPlaceholderText("Working directory (defaults to your home)")
+        self.cwd_input.setStyleSheet(ROUNDED_FIELD_STYLE)
         self.cwd_button = QPushButton("Choose…")
         self.copy_button = QPushButton("Copy")
         self.run_button = QPushButton("Run")
@@ -405,23 +425,41 @@ class MainWindow(QMainWindow):
         upper_layout.setContentsMargins(0, 0, 0, 0)
         upper_layout.addWidget(self.form, 1)
 
+        self.command_line_heading = QLabel("Command Line Interface")
+        self.output_heading = QLabel("Output")
+        self.explore_heading = QLabel("Explore CLI commands")
+        for heading in (
+            self.explore_heading,
+            self.command_line_heading,
+            self.output_heading,
+        ):
+            heading_font = heading.font()
+            heading_font.setBold(True)
+            heading.setFont(heading_font)
+
         lower = QWidget()
         lower_layout = QVBoxLayout(lower)
         lower_layout.setContentsMargins(0, 0, 0, 0)
-        lower_layout.addWidget(QLabel("Command Line Interface"))
+        lower_layout.setSpacing(10)
+        lower_layout.addWidget(self.command_line_heading)
         lower_layout.addWidget(self.command_editor)
         lower_layout.addLayout(run_row)
 
         self.clear_output_button = QPushButton("Clear")
         self.clear_output_button.setToolTip("Clear the output below")
         output_row = QHBoxLayout()
-        output_row.addWidget(QLabel("Output"))
+        output_row.addWidget(self.output_heading)
         output_row.addStretch(1)
         output_row.addWidget(self.clear_output_button)
-        lower_layout.addLayout(output_row)
 
+        output_section = QWidget()
+        output_layout = QVBoxLayout(output_section)
+        output_layout.setContentsMargins(0, 0, 0, 0)
+        output_layout.setSpacing(2)
+        output_layout.addLayout(output_row)
         self.output = OutputView()
-        lower_layout.addWidget(self.output, 1)
+        output_layout.addWidget(self.output, 1)
+        lower_layout.addWidget(output_section, 1)
 
         splitter = QSplitter(Qt.Vertical)
         splitter.addWidget(upper)
@@ -432,7 +470,8 @@ class MainWindow(QMainWindow):
         workspace = QWidget()
         layout = QVBoxLayout(workspace)
         layout.setContentsMargins(12, 12, 12, 12)
-        layout.setSpacing(10)
+        layout.setSpacing(6)
+        layout.addWidget(self.explore_heading)
         layout.addLayout(command_row)
         layout.addWidget(splitter, 1)
 
@@ -465,8 +504,10 @@ class MainWindow(QMainWindow):
         menu.addAction(clear_cache_action)
 
     def _connect(self) -> None:
+        self.history_list.itemClicked.connect(self._open_history_command)
         self.history_list.itemDoubleClicked.connect(self._open_history_command)
         self.history_list.itemActivated.connect(self._open_history_command)
+        self.settings_button.clicked.connect(self._open_settings)
         open_history_action = QAction(self.history_list)
         open_history_action.setShortcuts(
             [QKeySequence(Qt.Key_Return), QKeySequence(Qt.Key_Enter)]
@@ -497,8 +538,9 @@ class MainWindow(QMainWindow):
         self.run_button.clicked.connect(self.run)
         self.cancel_button.clicked.connect(self.runner.cancel)
         self.clear_output_button.clicked.connect(self.output.clear)
+        self.output.textChanged.connect(self._save_session_output)
 
-        self.runner.output.connect(self.output.append_text)
+        self.runner.output.connect(self._on_run_output)
         self.runner.failed.connect(self._on_run_failed)
         self.runner.finished.connect(self._on_run_finished)
 
@@ -529,11 +571,8 @@ class MainWindow(QMainWindow):
         self._set_command_input_invalid(False)
         self._set_discovering(True)
         parent_argv = None
-        if len(argv) > 1 and (
-            self._subcommand_owner is None
-            or argv[: len(self._subcommand_owner)] != self._subcommand_owner
-        ):
-            parent_argv = argv[:1]
+        if len(argv) > 1 and self._subcommand_owner != argv[:-1]:
+            parent_argv = argv[:-1]
 
         thread = QThread(self)
         worker = _DiscoveryWorker(self.service, argv, refresh, parent_argv)
@@ -588,6 +627,8 @@ class MainWindow(QMainWindow):
         self._set_discovering(False)
 
     def _on_discovered(self, spec: CommandSpec, result, parent_result=None) -> None:
+        self.history.add(spec.display_name)
+        self._activate_session(spec.display_name)
         self._spec = spec
         self._keep_typed_command = self._editor_typed
         try:
@@ -595,7 +636,6 @@ class MainWindow(QMainWindow):
         finally:
             self._keep_typed_command = False
         self.help_text_button.setEnabled(bool(spec.raw_help))
-        self.history.add(spec.display_name)
         self._refresh_history()
         if parent_result is not None:
             self._refresh_subcommands(parent_result.spec)
@@ -690,7 +730,7 @@ class MainWindow(QMainWindow):
             return
         parent_argv = self._subcommand_owner or self._spec.argv_prefix
         argv = [*parent_argv, name]
-        self._set_command_text(argv[0])
+        self._set_command_text(shlex.join(parent_argv))
         self.subcommand_combo.setCurrentIndex(index)
         self.discover(argv=argv)
 
@@ -732,7 +772,7 @@ class MainWindow(QMainWindow):
         for command in recent_commands:
             item = QListWidgetItem(command, self.history_list)
             item.setToolTip(command)
-            item.setSizeHint(QSize(0, 40))
+            item.setSizeHint(QSize(0, 30))
             if command == active:
                 self.history_list.setCurrentItem(item)
         self.history_empty.setVisible(not recent_commands)
@@ -740,8 +780,49 @@ class MainWindow(QMainWindow):
     def _open_history_command(self, item: QListWidgetItem | None) -> None:
         if item is None or self._thread is not None:
             return
-        self._set_command_text(item.text())
-        self.discover()
+        command = item.text()
+        self.command_input.setCurrentText(command)
+        self._activate_session(command)
+        session = self.history.session(command)
+        self._updating_preview = True
+        try:
+            self.command_editor.setPlainText(session["command_line"])
+        finally:
+            self._updating_preview = False
+        self._editor_typed = bool(session["command_line"])
+
+    def _activate_session(self, command: str) -> None:
+        if command == self._active_session:
+            return
+        session = self.history.session(command)
+        self._active_session = command
+        self.output.setPlainText(session["output"])
+        self.cwd_input.setText(session["cwd"])
+        self.output.verticalScrollBar().setValue(
+            self.output.verticalScrollBar().maximum()
+        )
+
+    def _save_session_output(self) -> None:
+        if self._active_session is not None:
+            self.history.update_session(
+                self._active_session, output=self.output.toPlainText()
+            )
+
+    def _on_run_output(self, text: str) -> None:
+        if self._running_session == self._active_session:
+            self.output.append_text(text)
+        elif self._running_session is not None:
+            session = self.history.session(self._running_session)
+            output = "\n".join((session["output"] + text).split("\n")[-MAX_BLOCKS:])
+            self.history.update_session(self._running_session, output=output)
+
+    def _append_run_notice(self, text: str) -> None:
+        if self._running_session == self._active_session:
+            self.output.append_notice(text)
+        elif self._running_session is not None:
+            output = self.history.session(self._running_session)["output"]
+            prefix = "" if not output or output.endswith("\n") else "\n"
+            self._on_run_output(f"{prefix}── {text} ──\n")
 
     def _clear_history(self) -> None:
         self.history.clear()
@@ -860,10 +941,25 @@ class MainWindow(QMainWindow):
         if argv is None or self.runner.running:
             return
 
-        self.output.append_notice(f"$ {preview(argv)}")
+        command = (
+            self._spec.display_name
+            if self._spec is not None
+            and argv[: len(self._spec.argv_prefix)] == self._spec.argv_prefix
+            else preview(argv[:1])
+        )
+        cwd = self.cwd_input.text().strip()
+        self.history.add(command)
+        self._activate_session(command)
+        self.cwd_input.setText(cwd)
+        self.history.update_session(command, command_line=preview(argv), cwd=cwd)
+        self._refresh_history()
+        self._running_session = command
+        self._append_run_notice(f"$ {preview(argv)}")
         try:
-            self.runner.start(argv, self.cwd_input.text().strip() or None)
+            self.runner.start(argv, cwd or None)
         except (RuntimeError, ValueError) as exc:
+            self._append_run_notice(str(exc))
+            self._running_session = None
             self._warn("Could not start", str(exc))
             return
 
@@ -872,7 +968,7 @@ class MainWindow(QMainWindow):
         self.statusBar().showMessage("Running…")
 
     def _on_run_failed(self, message: str) -> None:
-        self.output.append_notice(message)
+        self._append_run_notice(message)
 
     def _on_run_finished(self, code: int) -> None:
         self.cancel_button.setEnabled(False)
@@ -882,7 +978,8 @@ class MainWindow(QMainWindow):
             summary = "Finished successfully"
         else:
             summary = f"Exited with code {code}"
-        self.output.append_notice(summary)
+        self._append_run_notice(summary)
+        self._running_session = None
         self.statusBar().showMessage(summary)
         self._on_command_edited()
 
@@ -891,6 +988,13 @@ class MainWindow(QMainWindow):
     def _open_settings(self) -> None:
         if SettingsDialog(self.settings, self).exec() == SettingsDialog.Accepted:
             self.service.settings = self.settings
+            application = QApplication.instance()
+            if application is not None:
+                apply_theme(application, self.settings.dark_mode)
+                palette = QPalette(application.palette())
+                self.command_input.lineEdit().setPalette(palette)
+                self._command_input_palette = QPalette(palette)
+                self._set_command_input_invalid(False)
             self.statusBar().showMessage("Settings saved")
 
     def _show_help_text(self) -> None:

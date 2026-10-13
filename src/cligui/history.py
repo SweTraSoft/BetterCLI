@@ -1,4 +1,4 @@
-"""The most recently discovered commands, persisted across sessions."""
+"""Recent commands and their saved execution sessions."""
 
 from __future__ import annotations
 
@@ -18,14 +18,28 @@ class CommandHistory:
         self.path = path or data_dir() / "history.json"
         self._items = self._load()
 
-    def _load(self) -> list[str]:
+    def _load(self) -> list[dict[str, str]]:
         try:
             raw = json.loads(self.path.read_text(encoding="utf-8"))
         except (OSError, ValueError):
             return []
         if not isinstance(raw, list):
             return []
-        items = [item.strip() for item in raw if isinstance(item, str) and item.strip()]
+        items = []
+        for item in raw:
+            if isinstance(item, str):
+                item = {"command": item}
+            if not isinstance(item, dict):
+                continue
+            command = item.get("command")
+            if not isinstance(command, str) or not command.strip():
+                continue
+            entry = {"command": command.strip()}
+            for field in ("command_line", "cwd", "output"):
+                value = item.get(field, "")
+                entry[field] = value if isinstance(value, str) else ""
+            if not any(saved["command"] == entry["command"] for saved in items):
+                items.append(entry)
         return items[:MAX_ENTRIES]
 
     def _save(self) -> None:
@@ -37,13 +51,33 @@ class CommandHistory:
 
     def items(self) -> list[str]:
         """Most recent first."""
-        return list(self._items)
+        return [item["command"] for item in self._items]
+
+    def session(self, command: str) -> dict[str, str]:
+        text = " ".join(command.split())
+        for item in self._items:
+            if item["command"] == text:
+                return dict(item)
+        return {"command": text, "command_line": "", "cwd": "", "output": ""}
+
+    def update_session(self, command: str, **values: str) -> None:
+        text = " ".join(command.split())
+        for item in self._items:
+            if item["command"] == text:
+                for field in ("command_line", "cwd", "output"):
+                    if field in values:
+                        item[field] = values[field]
+                self._save()
+                return
 
     def add(self, command: str) -> None:
         text = " ".join(command.split())
         if not text:
             return
-        self._items = [text, *(item for item in self._items if item != text)][:MAX_ENTRIES]
+        entry = self.session(text)
+        self._items = [
+            entry, *(item for item in self._items if item["command"] != text)
+        ][:MAX_ENTRIES]
         self._save()
 
     def clear(self) -> None:

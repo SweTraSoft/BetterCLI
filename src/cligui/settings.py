@@ -21,6 +21,7 @@ DEFAULT_MODEL = "deepseek-chat"
 
 @dataclass
 class Settings:
+    dark_mode: bool = False
     llm_enabled: bool = True
     base_url: str = DEFAULT_BASE_URL
     model: str = DEFAULT_MODEL

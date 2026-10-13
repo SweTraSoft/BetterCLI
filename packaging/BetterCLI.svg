@@ -1,54 +1,30 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
   <defs>
-    <clipPath id="window-clip">
-      <rect x="78" y="82" width="868" height="860" rx="108"/>
-    </clipPath>
-    <filter id="shadow" x="0" y="0" width="120%" height="120%">
-      <feDropShadow dx="0" dy="20" stdDeviation="20" flood-color="#203536" flood-opacity="0.22"/>
-    </filter>
+    <linearGradient id="tile" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#FFFFFF"/><stop offset="1" stop-color="#DCEBFF"/></linearGradient>
+    <linearGradient id="terminal" x1="0" y1="0" x2="0.9" y2="1"><stop stop-color="#26364D"/><stop offset="1" stop-color="#071322"/></linearGradient>
+    <linearGradient id="panel" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#FFFFFF"/><stop offset="1" stop-color="#E5F0FF"/></linearGradient>
+    <linearGradient id="blue" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#08D8E8"/><stop offset="1" stop-color="#075CFF"/></linearGradient>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="150%"><feDropShadow dx="0" dy="24" stdDeviation="24" flood-color="#193A66" flood-opacity="0.27"/></filter>
+    <filter id="glow" x="-80%" y="-80%" width="260%" height="260%"><feGaussianBlur stdDeviation="14" result="blur"/><feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+    <clipPath id="tile-clip"><rect x="64" y="58" width="896" height="896" rx="218"/></clipPath>
   </defs>
-
-  <rect width="1024" height="1024" fill="#CFE84F"/>
-  <rect x="78" y="82" width="868" height="860" rx="108" fill="#F8F6E9" stroke="#203536" stroke-width="14" filter="url(#shadow)"/>
-
-  <g clip-path="url(#window-clip)">
-    <path d="M78 190V82h868v108z" fill="#203536"/>
-    <rect x="128" y="104" width="116" height="64" rx="18" fill="#CFE84F"/>
-    <path d="m151 123 20 13-20 13m30 0h38" fill="none" stroke="#203536" stroke-width="9" stroke-linecap="round" stroke-linejoin="round"/>
-    <text x="282" y="160" fill="#F8F6E9" font-family="Avenir Next, Helvetica Neue, sans-serif" font-size="74" font-weight="800">BetterCLI</text>
-    <path d="M284 174h320" fill="none" stroke="#67C7B7" stroke-width="6" stroke-linecap="round"/>
-
-    <rect x="132" y="238" width="350" height="430" rx="34" fill="#203536"/>
-    <circle cx="169" cy="276" r="8" fill="#F4775B"/>
-    <circle cx="196" cy="276" r="8" fill="#CFE84F"/>
-    <circle cx="223" cy="276" r="8" fill="#67C7B7"/>
-    <path d="m174 360 48 42-48 42" fill="none" stroke="#CFE84F" stroke-width="18" stroke-linecap="round" stroke-linejoin="round"/>
-    <path d="M245 444h45" fill="none" stroke="#CFE84F" stroke-width="18" stroke-linecap="round"/>
-    <text x="171" y="516" fill="#F8F6E9" font-family="SFMono-Regular, Menlo, monospace" font-size="34" font-weight="600">git status</text>
-    <path d="M171 548h246" fill="none" stroke="#59706D" stroke-width="4" stroke-linecap="round"/>
-    <text x="171" y="601" fill="#67C7B7" font-family="SFMono-Regular, Menlo, monospace" font-size="28">--short</text>
-    <path d="M171 628h112" fill="none" stroke="#59706D" stroke-width="4" stroke-linecap="round"/>
-
-    <rect x="542" y="238" width="350" height="430" rx="34" fill="#FFFFFF" stroke="#D9DED0" stroke-width="5"/>
-    <text x="580" y="298" fill="#203536" font-family="Avenir Next, Helvetica Neue, sans-serif" font-size="31" font-weight="700">Command form</text>
-    <text x="580" y="357" fill="#52615C" font-family="Avenir Next, Helvetica Neue, sans-serif" font-size="23" font-weight="600">Repository</text>
-    <rect x="580" y="373" width="274" height="58" rx="12" fill="#F8F6E9" stroke="#B9C5B6" stroke-width="4"/>
-    <text x="600" y="411" fill="#203536" font-family="SFMono-Regular, Menlo, monospace" font-size="23">./project</text>
-    <text x="580" y="478" fill="#52615C" font-family="Avenir Next, Helvetica Neue, sans-serif" font-size="23" font-weight="600">Show details</text>
-    <rect x="580" y="495" width="274" height="58" rx="12" fill="#F8F6E9" stroke="#B9C5B6" stroke-width="4"/>
-    <path d="M604 524h14m-7-7v14" fill="none" stroke="#2F8C7F" stroke-width="4" stroke-linecap="round"/>
-    <text x="633" y="533" fill="#203536" font-family="Avenir Next, Helvetica Neue, sans-serif" font-size="22">Include untracked</text>
-    <rect x="580" y="584" width="150" height="54" rx="15" fill="#2F8C7F"/>
-    <text x="618" y="620" fill="#FFFFFF" font-family="Avenir Next, Helvetica Neue, sans-serif" font-size="24" font-weight="700">Run</text>
-
-    <circle cx="512" cy="453" r="49" fill="#F4775B" stroke="#F8F6E9" stroke-width="8"/>
-    <path d="M490 453h40m-16-16 16 16-16 16" fill="none" stroke="#203536" stroke-width="9" stroke-linecap="round" stroke-linejoin="round"/>
-
-    <rect x="132" y="720" width="760" height="142" rx="34" fill="#E7ECD8"/>
-    <circle cx="190" cy="791" r="26" fill="#2F8C7F"/>
-    <path d="m178 791 9 9 17-19" fill="none" stroke="#FFFFFF" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"/>
-    <text x="238" y="784" fill="#203536" font-family="Avenir Next, Helvetica Neue, sans-serif" font-size="28" font-weight="700">Ready to run</text>
-    <text x="238" y="824" fill="#52615C" font-family="Avenir Next, Helvetica Neue, sans-serif" font-size="22">Review options, then execute safely</text>
-    <path d="M810 782h38m-14-14 14 14-14 14" fill="none" stroke="#2F8C7F" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"/>
+  <rect x="64" y="58" width="896" height="896" rx="218" fill="url(#tile)" stroke="#D6E5FA" stroke-width="3" filter="url(#shadow)"/>
+  <g clip-path="url(#tile-clip)">
+    <rect x="110" y="210" width="710" height="410" rx="58" fill="url(#terminal)" stroke="#7597C8" stroke-width="8" filter="url(#shadow)"/>
+    <path d="M116 278v-10a50 50 0 0 1 50-50h598a50 50 0 0 1 50 50v10z" fill="#FFFFFF" fill-opacity=".12"/>
+    <circle cx="184" cy="260" r="18" fill="#FF5F68"/><circle cx="236" cy="260" r="18" fill="#FFC247"/><circle cx="288" cy="260" r="18" fill="#25D18A"/>
+    <path d="m216 400 78 57-78 57" fill="none" stroke="#FFFFFF" stroke-width="27" stroke-linecap="round" stroke-linejoin="round" filter="url(#glow)"/>
+    <rect x="307" y="493" width="108" height="28" rx="10" fill="url(#blue)" filter="url(#glow)"/>
+    <path d="M511 150h336a47 47 0 0 1 47 47v310a47 47 0 0 1-47 47H516a47 47 0 0 1-47-47v-91l-42-31 42-31V197a47 47 0 0 1 47-47z" fill="url(#panel)" stroke="#8DC8FF" stroke-width="5" filter="url(#shadow)"/>
+    <rect x="491" y="188" width="369" height="78" rx="25" fill="#E4F0FF" stroke="#C2D8F4" stroke-width="3"/>
+    <circle cx="529" cy="226" r="17" fill="none" stroke="#344E70" stroke-width="6"/><path d="m542 239 17 17" stroke="#344E70" stroke-width="6" stroke-linecap="round"/>
+    <text x="584" y="239" fill="#20334F" font-family="Avenir Next, Helvetica Neue, sans-serif" font-size="35">git commit</text>
+    <rect x="491" y="282" width="378" height="72" rx="22" fill="url(#blue)"/>
+    <text x="512" y="328" fill="#FFFFFF" font-family="Avenir Next, Helvetica Neue, sans-serif" font-size="29" font-weight="700">-m</text><text x="650" y="328" fill="#FFFFFF" font-family="Avenir Next, Helvetica Neue, sans-serif" font-size="25">Commit message</text>
+    <text x="512" y="396" fill="#20334F" font-family="Avenir Next, Helvetica Neue, sans-serif" font-size="27" font-weight="600">-a</text><text x="650" y="396" fill="#405D83" font-family="Avenir Next, Helvetica Neue, sans-serif" font-size="24">Stage and commit all</text>
+    <text x="512" y="456" fill="#20334F" font-family="Avenir Next, Helvetica Neue, sans-serif" font-size="27" font-weight="600">--amend</text><text x="650" y="456" fill="#405D83" font-family="Avenir Next, Helvetica Neue, sans-serif" font-size="24">Amend last commit</text>
+    <text x="512" y="516" fill="#20334F" font-family="Avenir Next, Helvetica Neue, sans-serif" font-size="26" font-weight="600">--no-verify</text><text x="685" y="516" fill="#405D83" font-family="Avenir Next, Helvetica Neue, sans-serif" font-size="24">Skip hooks</text>
+    <text x="144" y="820" fill="#17283D" font-family="Avenir Next, Helvetica Neue, sans-serif" font-size="132" font-weight="800" letter-spacing="-5">Better</text>
+    <text x="570" y="820" fill="url(#blue)" font-family="Avenir Next, Helvetica Neue, sans-serif" font-size="132" font-weight="800" letter-spacing="-5">CLI</text>
   </g>
 </svg>
