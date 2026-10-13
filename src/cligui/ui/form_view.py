@@ -217,3 +217,6 @@ class FormView(QScrollArea):
             editor.clear()
         self._extra.clear()
         self.changed.emit()
+
+    def clear(self) -> None:
+        self._show_placeholder("Enter a command above and press Discover.")

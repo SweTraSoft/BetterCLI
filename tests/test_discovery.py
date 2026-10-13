@@ -1,9 +1,20 @@
 from __future__ import annotations
 
+from types import SimpleNamespace
+
 import pytest
 
+from cligui.cache import SpecCache, make_key
 from cligui.discovery import DiscoveryError, split_command
-from cligui.discovery.runner import clean_text, looks_like_help, resolve_binary
+from cligui.discovery.runner import (
+    HelpCapture,
+    clean_text,
+    fingerprint_binary,
+    looks_like_help,
+    resolve_binary,
+)
+from cligui.discovery.service import DiscoveryService
+from cligui.model.spec import CommandSpec
 
 
 class TestSplitCommand:
@@ -71,6 +82,67 @@ class TestTextCleanup:
 
     def test_normalises_line_endings(self):
         assert clean_text("a\r\nb") == "a\nb"
+
+
+class TestDiscoveryCache:
+    def test_fast_cache_hit_skips_help_capture(self, tmp_path, monkeypatch):
+        binary = tmp_path / "tool"
+        binary.write_text("#!/bin/sh\n", encoding="utf-8")
+        binary.chmod(0o755)
+        argv_prefix = [str(binary)]
+        cache = SpecCache(tmp_path / "cache")
+        cached_spec = CommandSpec(argv_prefix=argv_prefix)
+        fast_key = make_key(argv_prefix, binary, fingerprint_binary(binary, None))
+        cache.store(fast_key, cached_spec)
+        service = DiscoveryService(cache=cache)
+
+        def fail_if_captured(*args, **kwargs):
+            raise AssertionError("help capture should be skipped for a fast cache hit")
+
+        monkeypatch.setattr(
+            "cligui.discovery.service.capture_candidates", fail_if_captured
+        )
+
+        result = service.discover(argv_prefix)
+
+        assert result.from_cache
+        assert result.spec.argv_prefix == argv_prefix
+
+    def test_discovery_populates_fast_cache_key(self, tmp_path, monkeypatch):
+        binary = tmp_path / "tool"
+        binary.write_text("#!/bin/sh\n", encoding="utf-8")
+        binary.chmod(0o755)
+        argv_prefix = [str(binary)]
+        cache = SpecCache(tmp_path / "cache")
+        service = DiscoveryService(cache=cache)
+        parsed = SimpleNamespace(spec=CommandSpec(argv_prefix=argv_prefix), stats=object())
+        capture = HelpCapture(
+            text="Usage: tool",
+            origin="--help",
+            binary=binary,
+            fingerprint="1.0",
+            version="1.0",
+        )
+        monkeypatch.setattr(
+            "cligui.discovery.service.capture_candidates",
+            lambda *args, **kwargs: [capture],
+        )
+        monkeypatch.setattr(
+            "cligui.discovery.service.heuristic.parse_help",
+            lambda *args: parsed,
+        )
+        monkeypatch.setattr(
+            "cligui.discovery.service.confidence.score", lambda stats: 1.0
+        )
+        monkeypatch.setattr(
+            "cligui.discovery.service.confidence.needs_llm",
+            lambda stats: False,
+        )
+
+        service.discover(argv_prefix)
+
+        fast_key = make_key(argv_prefix, binary, fingerprint_binary(binary, None))
+        assert cache.load(fast_key) is not None
 
 
 class TestLooksLikeHelp:

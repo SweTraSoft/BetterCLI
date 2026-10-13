@@ -179,20 +179,29 @@ class _DiscoveryWorker(QObject):
         argv: list[str],
         refresh: bool,
         parent_argv: list[str] | None = None,
+        parent_argvs: list[list[str]] | None = None,
     ) -> None:
         super().__init__()
         self._service = service
         self._argv = argv
         self._refresh = refresh
         self._parent_argv = parent_argv
+        self._parent_argvs = parent_argvs or ([parent_argv] if parent_argv else [])
 
     def run(self) -> None:
         try:
-            parent_result = (
-                self._service.discover(self._parent_argv, refresh=self._refresh)
-                if self._parent_argv is not None
-                else None
-            )
+            parent_results = []
+            for parent_argv in self._parent_argvs:
+                if parent_results:
+                    known_subcommands = {
+                        subcommand.name
+                        for subcommand in parent_results[-1].spec.subcommands
+                    }
+                    if parent_argv[-1] not in known_subcommands:
+                        break
+                parent_results.append(
+                    self._service.discover(parent_argv, refresh=self._refresh)
+                )
             result = self._service.discover(self._argv, refresh=self._refresh)
         except DiscoveryError as exc:
             self.failed.emit(str(exc))
@@ -200,7 +209,7 @@ class _DiscoveryWorker(QObject):
             log.exception("discovery failed")
             self.failed.emit(f"Unexpected error during discovery: {exc}")
         else:
-            self.succeeded.emit(result.spec, result, parent_result)
+            self.succeeded.emit(result.spec, result, parent_results)
 
 
 class _CommandSuggestionDelegate(QStyledItemDelegate):
@@ -283,7 +292,10 @@ class MainWindow(QMainWindow):
         self._running_session: str | None = None
         self._spec: CommandSpec | None = None
         self._subcommand_owner: list[str] | None = None
-        self._subcommand_descriptions: dict[str, str] = {}
+        self._subcommand_specs: dict[tuple[str, ...], CommandSpec] = {}
+        self._subcommand_combos: list[QComboBox] = []
+        self._subcommand_combo_owners: list[list[str] | None] = []
+        self._selected_command_path: list[str] = []
         self._thread: QThread | None = None
         self._worker: _DiscoveryWorker | None = None
         self._updating_preview = False
@@ -371,31 +383,40 @@ class MainWindow(QMainWindow):
         self.subcommand_combo.setMaxVisibleItems(25)
         self.subcommand_combo.setToolTip("Open a subcommand of the current command")
         self.subcommand_combo.hide()
+        self._subcommand_combos = [self.subcommand_combo]
+        self._subcommand_combo_owners = [None]
         command_field_height = max(
             self.command_input.sizeHint().height(),
             self.subcommand_combo.sizeHint().height(),
         )
         self.command_input.setFixedHeight(command_field_height)
         self.subcommand_combo.setFixedHeight(command_field_height)
+        self._command_field_text_inset = self.command_input.lineEdit().geometry().left()
+        self.command_description.setIndent(self._command_field_text_inset)
 
-        command_fields_row = QHBoxLayout()
-        command_fields_row.setContentsMargins(0, 0, 0, 0)
-        command_fields_row.addWidget(self.command_input, 1)
-        command_fields_row.addWidget(self.subcommand_combo)
+        self._command_fields_row = QHBoxLayout()
+        self._command_fields_row.setContentsMargins(0, 0, 0, 0)
+        self._command_fields_row.addWidget(self.command_input, 1)
+        self._command_fields_row.addWidget(self.subcommand_combo)
+        self._command_fields_row.addWidget(self.discover_button)
+        self._command_fields_row.addWidget(self.help_text_button)
+        self._command_fields_row.addWidget(self.clear_inputs_button)
+        # macOS layout-item margins differ between combo boxes and buttons.
+        for widget in (
+            self.command_input,
+            self.subcommand_combo,
+            self.discover_button,
+            self.help_text_button,
+            self.clear_inputs_button,
+        ):
+            widget.setAttribute(Qt.WidgetAttribute.WA_LayoutUsesWidgetRect)
+            widget.setFixedHeight(command_field_height)
 
-        command_fields_layout = QVBoxLayout()
-        command_fields_layout.setContentsMargins(0, 0, 0, 0)
-        command_fields_layout.setSpacing(6)
-        command_fields_layout.setAlignment(Qt.AlignmentFlag.AlignTop)
-        command_fields_layout.addLayout(command_fields_row)
-        command_fields_layout.addWidget(self.command_description)
-
-        command_row = QHBoxLayout()
+        command_row = QVBoxLayout()
         command_row.setContentsMargins(0, 0, 0, 0)
-        command_row.addLayout(command_fields_layout, 1)
-        command_row.addWidget(self.discover_button)
-        command_row.addWidget(self.help_text_button)
-        command_row.addWidget(self.clear_inputs_button)
+        command_row.setSpacing(6)
+        command_row.addLayout(self._command_fields_row)
+        command_row.addWidget(self.command_description)
 
         self.form = FormView()
 
@@ -413,9 +434,16 @@ class MainWindow(QMainWindow):
         self.cancel_button = QPushButton("Cancel")
         self.cancel_button.setEnabled(False)
 
+        cwd_row = QHBoxLayout()
+        cwd_row.addWidget(self.cwd_input, 1)
+        cwd_row.addWidget(self.cwd_button)
+        cwd_field_height = self.cwd_input.sizeHint().height()
+        for widget in (self.cwd_input, self.cwd_button):
+            widget.setAttribute(Qt.WidgetAttribute.WA_LayoutUsesWidgetRect)
+            widget.setFixedHeight(cwd_field_height)
+
         run_row = QHBoxLayout()
-        run_row.addWidget(self.cwd_input, 1)
-        run_row.addWidget(self.cwd_button)
+        run_row.addStretch(1)
         run_row.addWidget(self.copy_button)
         run_row.addWidget(self.run_button)
         run_row.addWidget(self.cancel_button)
@@ -428,6 +456,7 @@ class MainWindow(QMainWindow):
         self.command_line_heading = QLabel("Command Line Interface")
         self.output_heading = QLabel("Output")
         self.explore_heading = QLabel("Explore CLI commands")
+        self.explore_heading.setIndent(self._command_field_text_inset)
         for heading in (
             self.explore_heading,
             self.command_line_heading,
@@ -441,6 +470,7 @@ class MainWindow(QMainWindow):
         lower_layout = QVBoxLayout(lower)
         lower_layout.setContentsMargins(0, 0, 0, 0)
         lower_layout.setSpacing(10)
+        lower_layout.addLayout(cwd_row)
         lower_layout.addWidget(self.command_line_heading)
         lower_layout.addWidget(self.command_editor)
         lower_layout.addLayout(run_row)
@@ -470,7 +500,7 @@ class MainWindow(QMainWindow):
         workspace = QWidget()
         layout = QVBoxLayout(workspace)
         layout.setContentsMargins(12, 12, 12, 12)
-        layout.setSpacing(6)
+        layout.setSpacing(10)
         layout.addWidget(self.explore_heading)
         layout.addLayout(command_row)
         layout.addWidget(splitter, 1)
@@ -526,10 +556,14 @@ class MainWindow(QMainWindow):
         self.command_input.currentTextChanged.connect(self._update_command_input_width)
         self._update_command_input_width(self.command_input.currentText())
         self.command_input.lineEdit().returnPressed.connect(self.discover)
-        self.command_input.activated.connect(lambda _: self.discover())
+        self.command_input.activated.connect(
+            lambda _: self._discover_selected_command()
+        )
         self.discover_button.clicked.connect(self.discover)
         self.clear_inputs_button.clicked.connect(self._clear_inputs)
-        self.subcommand_combo.activated.connect(self._open_subcommand)
+        self.subcommand_combo.activated.connect(
+            lambda index: self._open_subcommand_from(self.subcommand_combo, index)
+        )
         self.form.changed.connect(self._update_preview)
         self.command_editor.textChanged.connect(self._on_command_editor_changed)
         self.help_text_button.clicked.connect(self._show_help_text)
@@ -570,12 +604,16 @@ class MainWindow(QMainWindow):
 
         self._set_command_input_invalid(False)
         self._set_discovering(True)
-        parent_argv = None
-        if len(argv) > 1 and self._subcommand_owner != argv[:-1]:
-            parent_argv = argv[:-1]
+        parent_argvs = [
+            argv[:length]
+            for length in range(1, len(argv))
+        ]
+        parent_argv = parent_argvs[-1] if parent_argvs else None
 
         thread = QThread(self)
-        worker = _DiscoveryWorker(self.service, argv, refresh, parent_argv)
+        worker = _DiscoveryWorker(
+            self.service, argv, refresh, parent_argv, parent_argvs
+        )
         worker.moveToThread(thread)
         thread.started.connect(worker.run)
         worker.succeeded.connect(self._on_discovered)
@@ -591,6 +629,9 @@ class MainWindow(QMainWindow):
 
     def _on_command_text_edited(self, _text: str) -> None:
         self._set_command_input_invalid(False)
+        self._subcommand_specs.clear()
+        self._selected_command_path = []
+        self._populate_subcommand_combos([])
         self._search_timer.start()
 
     def _set_command_input_invalid(self, invalid: bool) -> None:
@@ -615,7 +656,6 @@ class MainWindow(QMainWindow):
 
     def _set_discovering(self, busy: bool) -> None:
         self.discover_button.setEnabled(not busy)
-        self.history_list.setEnabled(not busy)
         if busy:
             self.statusBar().showMessage("Reading --help…")
 
@@ -637,9 +677,34 @@ class MainWindow(QMainWindow):
             self._keep_typed_command = False
         self.help_text_button.setEnabled(bool(spec.raw_help))
         self._refresh_history()
-        if parent_result is not None:
-            self._refresh_subcommands(parent_result.spec)
-        self._refresh_subcommands(spec)
+        selected_argv = list(spec.argv_prefix)
+        try:
+            entered_argv = split_command(self.command_input.currentText())
+        except DiscoveryError:
+            entered_argv = []
+        parent_results = (
+            parent_result
+            if isinstance(parent_result, (list, tuple))
+            else [parent_result]
+            if parent_result is not None
+            else []
+        )
+        complete_parent_chain = len(parent_results) == len(selected_argv) - 1 and all(
+            parent.spec.argv_prefix == selected_argv[: index + 1]
+            and selected_argv[index + 1]
+            in {subcommand.name for subcommand in parent.spec.subcommands}
+            for index, parent in enumerate(parent_results)
+        )
+        if (
+            len(selected_argv) > 1
+            and entered_argv == selected_argv
+            and complete_parent_chain
+        ):
+            self.command_input.setCurrentText(shlex.quote(selected_argv[0]))
+
+        for parent in parent_results:
+            self._refresh_subcommands(parent.spec, selected_argv)
+        self._refresh_subcommands(spec, selected_argv)
         self._update_command_description()
         origin = "cache" if result.from_cache else spec.source.value
         parts = [f"{len(spec.options)} options", f"{len(spec.positionals)} arguments"]
@@ -651,58 +716,101 @@ class MainWindow(QMainWindow):
         if result.note:
             self.output.append_notice(result.note)
 
-    def _refresh_subcommands(self, spec: CommandSpec) -> None:
-        if not spec.subcommands:
+    def _ensure_subcommand_combo(self, level: int) -> QComboBox:
+        while len(self._subcommand_combos) <= level:
+            combo = QComboBox()
+            combo.setMinimumWidth(180)
+            combo.setMaxVisibleItems(25)
+            combo.setFixedHeight(self.command_input.height())
+            combo.hide()
+            combo.activated.connect(
+                lambda index, selected_combo=combo: self._open_subcommand_from(
+                    selected_combo, index
+                )
+            )
+            self._command_fields_row.insertWidget(
+                1 + len(self._subcommand_combos), combo
+            )
+            self._subcommand_combos.append(combo)
+            self._subcommand_combo_owners.append(None)
+        return self._subcommand_combos[level]
+
+    def _refresh_subcommands(
+        self, spec: CommandSpec, selected_argv: list[str] | None = None
+    ) -> None:
+        prefix = tuple(spec.argv_prefix)
+        if selected_argv is None:
             try:
                 current_argv = split_command(self.command_input.currentText())
             except DiscoveryError:
                 current_argv = []
-            if (
-                self._subcommand_owner is not None
-                and (
-                    (
-                        len(current_argv) > len(self._subcommand_owner)
-                        and current_argv[: len(self._subcommand_owner)]
-                        == self._subcommand_owner
-                    )
-                    or (
-                        len(spec.argv_prefix) > len(self._subcommand_owner)
-                        and spec.argv_prefix[: len(self._subcommand_owner)]
-                        == self._subcommand_owner
-                    )
-                )
+            selected_argv = self._selected_command_path.copy()
+            if current_argv and (
+                not selected_argv
+                or current_argv[0] != selected_argv[0]
+                or len(current_argv) > len(selected_argv)
             ):
-                child_argv = (
-                    spec.argv_prefix
-                    if spec.argv_prefix[: len(self._subcommand_owner)]
-                    == self._subcommand_owner
-                    else current_argv
-                )
-                child = child_argv[len(self._subcommand_owner)]
-                child_index = self.subcommand_combo.findData(child)
-                if child_index >= 0:
-                    self.subcommand_combo.setCurrentIndex(child_index)
-                self.subcommand_combo.setVisible(True)
-                self._update_command_description()
-                return
+                selected_argv = current_argv
+            if not selected_argv or selected_argv[0] != spec.argv_prefix[0]:
+                selected_argv = list(spec.argv_prefix)
 
-        self.subcommand_combo.blockSignals(True)
-        self.subcommand_combo.clear()
-        if spec.subcommands:
-            self._subcommand_owner = list(spec.argv_prefix)
-            self._subcommand_descriptions = {
-                subcommand.name: subcommand.help for subcommand in spec.subcommands
-            }
-            self.subcommand_combo.addItem(
-                f"Subcommands ({len(spec.subcommands)})…", userData=None
-            )
-            for sub in spec.subcommands:
-                self.subcommand_combo.addItem(sub.display, userData=sub.name)
+        if len(prefix) == 1:
+            self._subcommand_specs = {prefix: spec}
         else:
-            self._subcommand_owner = None
-            self._subcommand_descriptions = {}
-        self.subcommand_combo.blockSignals(False)
-        self.subcommand_combo.setVisible(bool(spec.subcommands))
+            self._subcommand_specs = {
+                parent: parent_spec
+                for parent, parent_spec in self._subcommand_specs.items()
+                if len(parent) < len(prefix) and prefix[: len(parent)] == parent
+            }
+            self._subcommand_specs[prefix] = spec
+        self._selected_command_path = list(selected_argv)
+        self._populate_subcommand_combos(selected_argv)
+
+    def _populate_subcommand_combos(self, selected_argv: list[str]) -> None:
+        if not selected_argv:
+            active_count = 0
+        else:
+            owner = selected_argv[:1]
+            active_count = 0
+            while True:
+                spec = self._subcommand_specs.get(tuple(owner))
+                if spec is None or not spec.subcommands:
+                    break
+                combo = self._ensure_subcommand_combo(active_count)
+                self._subcommand_combo_owners[active_count] = list(owner)
+                combo.blockSignals(True)
+                combo.clear()
+                combo.addItem(
+                    f"{owner[-1]} subcommands ({len(spec.subcommands)})…",
+                    userData=None,
+                )
+                for subcommand in spec.subcommands:
+                    combo.addItem(subcommand.display, userData=subcommand.name)
+                if len(selected_argv) > len(owner):
+                    selected_index = combo.findData(selected_argv[len(owner)])
+                    if selected_index >= 0:
+                        combo.setCurrentIndex(selected_index)
+                combo.blockSignals(False)
+                combo.setToolTip(f"Open a subcommand of {shlex.join(owner)}")
+                combo.setVisible(True)
+                active_count += 1
+
+                selected = combo.currentData()
+                if not selected:
+                    break
+                owner = [*owner, selected]
+
+        for combo in self._subcommand_combos[active_count:]:
+            combo.hide()
+            combo.blockSignals(True)
+            combo.clear()
+            combo.blockSignals(False)
+            self._subcommand_combo_owners[self._subcommand_combos.index(combo)] = None
+        self._subcommand_owner = (
+            self._subcommand_combo_owners[active_count - 1]
+            if active_count
+            else None
+        )
 
     def _update_command_description(self) -> None:
         try:
@@ -711,28 +819,49 @@ class MainWindow(QMainWindow):
             argv = []
 
         description = COMMAND_DESCRIPTIONS.get(argv[0], "") if argv else ""
-        selected_subcommand = self.subcommand_combo.currentData()
-        owner = self._subcommand_owner
-        if selected_subcommand and owner and argv[: len(owner)] == owner:
-            if len(argv) == len(owner) or argv[len(owner)] == selected_subcommand:
-                description = (
-                    self._subcommand_descriptions.get(selected_subcommand)
-                    or description
-                )
 
         self.command_description.setText(description)
         self.command_description.setToolTip(description)
         self.command_description.setVisible(bool(description))
 
     def _open_subcommand(self, index: int) -> None:
-        name = self.subcommand_combo.itemData(index)
-        if not name or self._spec is None:
+        self._open_subcommand_from(self.subcommand_combo, index)
+
+    def _open_subcommand_from(self, combo: QComboBox, index: int) -> None:
+        name = combo.itemData(index)
+        level = self._subcommand_combos.index(combo)
+        owner = self._subcommand_combo_owners[level]
+        if not name or owner is None:
             return
-        parent_argv = self._subcommand_owner or self._spec.argv_prefix
-        argv = [*parent_argv, name]
-        self._set_command_text(shlex.join(parent_argv))
-        self.subcommand_combo.setCurrentIndex(index)
+        argv = [*owner, name]
+        self._selected_command_path = argv
+        self._subcommand_specs = {
+            prefix: spec
+            for prefix, spec in self._subcommand_specs.items()
+            if len(prefix) <= len(owner)
+        }
+        self.command_input.setCurrentText(shlex.quote(argv[0]))
+        self._populate_subcommand_combos(argv)
+        self._set_command_preview(argv)
         self.discover(argv=argv)
+
+    def _discover_selected_command(self) -> None:
+        try:
+            argv = split_command(self.command_input.currentText())
+        except DiscoveryError:
+            self.discover()
+            return
+        self._set_command_preview(argv)
+        self.discover(argv=argv)
+
+    def _set_command_preview(self, argv: list[str]) -> None:
+        self._updating_preview = True
+        try:
+            self.command_editor.setPlainText(preview(argv))
+        finally:
+            self._updating_preview = False
+        self._editor_typed = False
+        self._on_command_edited()
 
     def _on_discovery_failed(self, message: str) -> None:
         self.statusBar().showMessage("Discovery failed")
@@ -834,10 +963,23 @@ class MainWindow(QMainWindow):
         self.command_input.setCurrentIndex(-1)
         self.command_input.clearEditText()
         self._set_command_input_invalid(False)
-        self.command_editor.clear()
-        self.subcommand_combo.hide()
+        self._spec = None
+        self._active_session = None
+        self._editor_typed = False
+        self._keep_typed_command = False
+        self.form.clear()
+        self._update_preview()
+        self.help_text_button.setEnabled(False)
+        self.command_description.clear()
+        self.command_description.hide()
+        self.cwd_input.clear()
+        self.output.clear()
+        self._refresh_history()
+        self._subcommand_specs.clear()
+        self._selected_command_path = []
+        self._populate_subcommand_combos([])
         self._subcommand_owner = None
-        self._subcommand_descriptions = {}
+        self.statusBar().showMessage("Ready")
 
     # ----- command assembly and execution --------------------------------
 
@@ -933,9 +1075,6 @@ class MainWindow(QMainWindow):
 
     def _choose_cwd(self) -> None:
         chosen = QFileDialog.getExistingDirectory(self, "Working directory")
-        if chosen:
-            self.cwd_input.setText(chosen)
-
     def run(self) -> None:
         argv = self._current_argv()
         if argv is None or self.runner.running:

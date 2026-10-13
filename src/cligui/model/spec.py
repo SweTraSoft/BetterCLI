@@ -11,7 +11,7 @@ from enum import StrEnum
 from pydantic import BaseModel, Field, field_validator
 
 #: Bump whenever parsing or the schema changes so stale cache entries are dropped.
-PARSER_VERSION = 2
+PARSER_VERSION = 3
 
 
 class OptionKind(StrEnum):

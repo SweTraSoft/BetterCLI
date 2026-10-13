@@ -230,3 +230,16 @@ class TestEdgeCases:
         text = "usage: x [--alpha] [--beta]\n\nOptions:\n  --alpha   only this one\n"
         result = parse_help(text, ["x"])
         assert [o.name for o in result.spec.options] == ["--alpha"]
+
+
+def test_every_usage_form_contributes_positionals():
+    text = (
+        "usage: cp [-R [-H | -L | -P]] [-fi | -n] [-aclpSsvXx] source_file target_file\n"
+        "       cp [-R [-H | -L | -P]] [-fi | -n] [-aclpSsvXx] source_file ... target_directory\n"
+    )
+    spec = parse_help(text, ["cp"]).spec
+    assert [(p.name, p.kind, p.required, p.variadic) for p in spec.positionals] == [
+        ("source_file", OptionKind.PATH_FILE, True, True),
+        ("target_file", OptionKind.PATH_FILE, False, False),
+        ("target_directory", OptionKind.PATH_DIR, False, False),
+    ]

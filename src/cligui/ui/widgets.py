@@ -285,7 +285,8 @@ def editor_for_option(option: OptionSpec) -> Editor:
 def editor_for_positional(
     positional: PositionalSpec, allow_directory: bool = False
 ) -> Editor:
-    if allow_directory:
+    # File arguments such as `source_file` routinely accept folders too (`cp -R`).
+    if allow_directory or positional.kind is OptionKind.PATH_FILE:
         return PathEditor(
             directory=False, multiple=positional.variadic, allow_directory=True
         )

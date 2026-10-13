@@ -11,6 +11,7 @@ from cligui.discovery import confidence, heuristic, llm
 from cligui.discovery.runner import (
     DiscoveryError,
     capture_candidates,
+    fingerprint_binary,
     resolve_binary,
 )
 from cligui.model.spec import CommandSpec, SpecSource
@@ -60,12 +61,17 @@ class DiscoveryService:
 
     def discover(self, argv_prefix: list[str], refresh: bool = False) -> DiscoveryResult:
         binary = resolve_binary(argv_prefix[0])
+        fast_key = make_key(argv_prefix, binary, fingerprint_binary(binary, None))
+        if not refresh and (cached := self.cache.load(fast_key)) is not None:
+            return DiscoveryResult(spec=cached, from_cache=True)
+
         candidates = capture_candidates(
             argv_prefix, timeout=self.settings.discovery_timeout
         )
         key = make_key(argv_prefix, binary, candidates[0].fingerprint)
 
         if not refresh and (cached := self.cache.load(key)) is not None:
+            self.cache.store(fast_key, cached)
             return DiscoveryResult(spec=cached, from_cache=True)
 
         # Several help sources may be available; keep whichever parses richest.
@@ -101,6 +107,10 @@ class DiscoveryService:
                     improved.version = capture.version
                     improved.usage_line = spec.usage_line
                     improved.subcommands = improved.subcommands or spec.subcommands
+                    known = {p.name.lower() for p in improved.positionals}
+                    improved.positionals.extend(
+                        p for p in spec.positionals if p.name.lower() not in known
+                    )
                     if len(improved.options) >= len(spec.options):
                         spec = improved
                         note = "Options were reconstructed by DeepSeek."
@@ -122,4 +132,5 @@ class DiscoveryService:
 
         if spec.source is not SpecSource.MANUAL:
             self.cache.store(key, spec)
+            self.cache.store(fast_key, spec)
         return DiscoveryResult(spec=spec, note=note)

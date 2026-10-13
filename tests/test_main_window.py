@@ -58,6 +58,57 @@ def test_explore_heading_is_above_command_row(window):
     assert layout.itemAt(1).layout() is not None
 
 
+def test_command_description_and_heading_follow_native_field_inset(window):
+    window.command_input.setCurrentText("git")
+    window.show()
+    QApplication.processEvents()
+    text_inset = window.command_input.lineEdit().geometry().left()
+    command_text_x = (
+        window.command_input.mapTo(window, QPoint(0, 0)).x() + text_inset
+    )
+
+    assert window.command_description.text() == (
+        "Track changes and manage version history"
+    )
+    assert window.command_description.indent() == text_inset
+    assert window.explore_heading.indent() == text_inset
+    assert (
+        window.command_description.mapTo(window, QPoint(0, 0)).x()
+        + window.command_description.indent()
+        == command_text_x
+    )
+    assert (
+        window.explore_heading.mapTo(window, QPoint(0, 0)).x()
+        + window.explore_heading.indent()
+        == command_text_x
+    )
+
+
+def test_command_row_stays_aligned_when_description_is_shown(window):
+    window.command_input.setCurrentText("git")
+    window._refresh_subcommands(
+        CommandSpec(
+            argv_prefix=["git"],
+            subcommands=[SubcommandSpec(name="clone", help="Clone a repository")],
+        )
+    )
+    window.show()
+    QApplication.processEvents()
+
+    assert window.command_description.isVisible()
+    centers = {
+        widget.mapTo(window, QPoint(0, 0)).y() + widget.height() // 2
+        for widget in (
+            window.command_input,
+            window.subcommand_combo,
+            window.discover_button,
+            window.help_text_button,
+            window.clear_inputs_button,
+        )
+    }
+    assert len(centers) == 1
+
+
 def test_section_headings_are_bold_and_aligned_with_fields(window):
     window.show()
     QApplication.processEvents()
@@ -422,7 +473,9 @@ def test_command_description_shows_top_level_and_subcommand_help(window):
         + window.subcommand_combo.width()
     )
     description_top = window.command_description.mapTo(window, QPoint(0, 0)).y()
-    assert window.command_description.text() == long_help
+    assert window.command_description.text() == (
+        "Track changes and manage version history"
+    )
     assert main_top == subcommand_top
     assert window.command_input.height() == window.subcommand_combo.height()
     assert description_top >= main_top + window.command_input.height()
@@ -440,18 +493,36 @@ def test_clear_history_updates_sidebar_and_saved_history(window):
     assert CommandHistory(window.history.path).items() == []
 
 
-def test_clear_inputs_clears_top_command_and_command_line(window):
+def test_new_clears_active_command_workspace(window):
     assert window.clear_inputs_button.text() == "New"
+    spec = CommandSpec(argv_prefix=["git"], positionals=[PositionalSpec(name="repo")])
+    window._spec = spec
+    window.form.load(spec)
     window.command_input.setCurrentText("git log")
     window.command_editor.setPlainText("git log --oneline")
+    window.cwd_input.setText("/tmp")
+    window.output.setPlainText("previous output")
+    window._active_session = "git"
+    window.help_text_button.setEnabled(True)
+    window.command_description.setText("Track changes")
+    window.command_description.show()
     window._search_timer.start()
 
     window.clear_inputs_button.click()
 
     assert window.command_input.currentText() == ""
     assert window.command_editor.toPlainText() == ""
+    assert window.command_editor.placeholderText() == "No command configured yet."
+    assert window._spec is None
+    assert window.form.spec is None
+    assert window.cwd_input.text() == ""
+    assert window.output.toPlainText() == ""
+    assert window._active_session is None
+    assert not window.help_text_button.isEnabled()
+    assert window.command_description.isHidden()
     assert not window._search_timer.isActive()
     assert window.subcommand_combo.isHidden()
+    assert window.statusBar().currentMessage() == "Ready"
 
 
 def test_missing_command_tints_entry_without_popup(window, monkeypatch):
@@ -679,6 +750,19 @@ def test_initial_nested_command_discovers_immediate_parent(window, monkeypatch, 
     assert window._worker._parent_argv == ["git", "remote"]
 
 
+def test_initial_three_level_command_discovers_every_parent(window, monkeypatch):
+    monkeypatch.setattr(window.service, "preflight", Mock())
+    monkeypatch.setattr(main_window.QThread, "start", Mock())
+    window.command_input.setCurrentText("openclaw config file")
+
+    window.discover()
+
+    assert window._worker._parent_argvs == [
+        ["openclaw"],
+        ["openclaw", "config"],
+    ]
+
+
 def test_nested_subcommands_keep_full_parent_path(window, monkeypatch):
     discover = Mock()
     monkeypatch.setattr(window, "discover", discover)
@@ -697,14 +781,17 @@ def test_nested_subcommands_keep_full_parent_path(window, monkeypatch):
         ),
         result,
     )
-    window._open_subcommand(1)
+    window._open_subcommand_from(window._subcommand_combos[1], 1)
 
     discover.assert_called_with(argv=["git", "remote", "add"])
-    assert window.command_input.currentText() == "git remote"
+    assert window.command_input.currentText() == "git"
     window._on_discovered(CommandSpec(argv_prefix=["git", "remote", "add"]), result)
-    assert window.subcommand_combo.currentData() == "add"
-    assert not window.subcommand_combo.isHidden()
-    assert window.command_description.text() == "Add a remote"
+    assert window.subcommand_combo.currentData() == "remote"
+    assert window._subcommand_combos[1].currentData() == "add"
+    assert not window._subcommand_combos[1].isHidden()
+    assert window.command_description.text() == (
+        "Track changes and manage version history"
+    )
     assert window.command_editor.toPlainText() == "git remote add"
 
 
@@ -729,7 +816,52 @@ def test_initial_child_discovery_populates_and_selects_parent_subcommand(window)
         "clone",
         "commit",
     ]
-    assert window.command_input.currentText() == "git clone"
+    assert window.command_input.currentText() == "git"
+
+
+def test_three_level_command_uses_a_dropdown_for_each_subcommand(window):
+    window.command_input.setCurrentText("openclaw config file")
+    root_spec = CommandSpec(
+        argv_prefix=["openclaw"],
+        subcommands=[SubcommandSpec(name="config", has_children=True)],
+    )
+    config_spec = CommandSpec(
+        argv_prefix=["openclaw", "config"],
+        subcommands=[SubcommandSpec(name="file")],
+    )
+    file_spec = CommandSpec(argv_prefix=["openclaw", "config", "file"])
+
+    window._on_discovered(
+        file_spec,
+        SimpleNamespace(from_cache=False, note=None),
+        parent_result=[
+            SimpleNamespace(spec=root_spec),
+            SimpleNamespace(spec=config_spec),
+        ],
+    )
+
+    assert window.command_input.currentText() == "openclaw"
+    assert len([combo for combo in window._subcommand_combos if not combo.isHidden()]) == 2
+    assert window._subcommand_combos[0].currentData() == "config"
+    assert window._subcommand_combos[1].currentData() == "file"
+
+
+def test_non_subcommand_tokens_stay_in_the_command_field(window):
+    window.command_input.setCurrentText("git --version")
+    root_spec = CommandSpec(
+        argv_prefix=["git"],
+        subcommands=[SubcommandSpec(name="log")],
+    )
+
+    window._on_discovered(
+        CommandSpec(argv_prefix=["git", "--version"]),
+        SimpleNamespace(from_cache=False, note=None),
+        parent_result=SimpleNamespace(spec=root_spec),
+    )
+
+    assert window.command_input.currentText() == "git --version"
+    assert window.subcommand_combo.currentData() is None
+    assert len([combo for combo in window._subcommand_combos if not combo.isHidden()]) == 1
 
 
 def test_subcommand_selection_keeps_only_top_command_in_entry(window, monkeypatch):
@@ -750,6 +882,18 @@ def test_subcommand_selection_keeps_only_top_command_in_entry(window, monkeypatc
     preflight.assert_called_once_with(["git", "clone"])
     start.assert_called_once_with()
     assert window.subcommand_combo.currentText() == "clone"
+    assert window.command_editor.toPlainText() == "git clone"
+
+
+def test_selected_command_is_previewed_before_discovery(window, monkeypatch):
+    discover = Mock()
+    monkeypatch.setattr(window, "discover", discover)
+    window.command_input.setCurrentText("git log")
+
+    window._discover_selected_command()
+
+    assert window.command_editor.toPlainText() == "git log"
+    discover.assert_called_once_with(argv=["git", "log"])
 
 
 def test_subcommand_dropdown_stays_available_for_typed_child_command(window):

@@ -221,9 +221,12 @@ def _infer_kind(metavar: str | None, choices: list[str], variadic: bool) -> Opti
     if variadic:
         return OptionKind.MULTI
     word = re.sub(r"[^A-Za-z]", "", metavar).upper()
-    if word in _DIR_WORDS:
+    # Compound names like `source_file` or `target-directory` are judged by their last part.
+    parts = [p for p in re.split(r"[^A-Za-z]+", metavar.upper()) if p]
+    last = parts[-1] if parts else word
+    if word in _DIR_WORDS or last in _DIR_WORDS:
         return OptionKind.PATH_DIR
-    if word in _FILE_WORDS:
+    if word in _FILE_WORDS or last in _FILE_WORDS:
         return OptionKind.PATH_FILE
     if word in _INT_WORDS:
         return OptionKind.INT
@@ -339,9 +342,18 @@ def _parse_positionals(usage: str, argv_prefix: list[str]) -> list[PositionalSpe
         skip += 1
     positionals: list[PositionalSpec] = []
     seen: set[str] = set()
+    previous: str | None = None
     for token in tokens[skip:]:
         stripped = token.strip()
-        if not stripped or stripped in {"--", "..."}:
+        if stripped == "...":
+            # `source_file ... target` repeats the preceding argument.
+            if previous is not None:
+                for positional in positionals:
+                    if positional.name == previous:
+                        positional.variadic = True
+            continue
+        previous = None
+        if not stripped or stripped == "--":
             continue
         optional = stripped.startswith("[")
         name, choices, variadic = _clean_metavar(stripped)
@@ -354,7 +366,10 @@ def _parse_positionals(usage: str, argv_prefix: list[str]) -> list[PositionalSpe
         if any(ch.isspace() for ch in name):
             continue
         key = name.lower()
-        if key in seen or key in _USAGE_PLACEHOLDERS or key == program.lower():
+        if key in _USAGE_PLACEHOLDERS or key == program.lower():
+            continue
+        previous = name
+        if key in seen:
             continue
         seen.add(key)
         positionals.append(
@@ -366,6 +381,31 @@ def _parse_positionals(usage: str, argv_prefix: list[str]) -> list[PositionalSpe
             )
         )
     return positionals
+
+
+def _merge_positionals(
+    alternatives: list[str], argv_prefix: list[str]
+) -> list[PositionalSpec]:
+    """Combine the arguments of every usage form so none is hidden.
+
+    `cp` lists `source_file target_file` and `source_file ... target_directory`;
+    only arguments shared by every form stay required.
+    """
+    forms = [_parse_positionals(alt, argv_prefix) for alt in alternatives]
+    forms = [form for form in forms if form]
+    merged: dict[str, PositionalSpec] = {}
+    for form in forms:
+        for positional in form:
+            key = positional.name.lower()
+            if (existing := merged.get(key)) is None:
+                merged[key] = positional
+            else:
+                existing.variadic = existing.variadic or positional.variadic
+                existing.required = existing.required and positional.required
+    for key, positional in merged.items():
+        if any(all(p.name.lower() != key for p in form) for form in forms):
+            positional.required = False
+    return list(merged.values())
 
 
 def _subcommands_from_usage(usage: str) -> list[SubcommandSpec]:
@@ -532,9 +572,7 @@ def parse_help(text: str, argv_prefix: list[str]) -> ParseResult:
         argv_prefix=argv_prefix,
         usage_line=usage,
         options=options,
-        positionals=_parse_positionals(alternatives[0], argv_prefix)
-        if alternatives
-        else [],
+        positionals=_merge_positionals(alternatives, argv_prefix),
         subcommands=subcommands,
         source=SpecSource.HEURISTIC,
         raw_help=text,

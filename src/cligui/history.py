@@ -10,7 +10,7 @@ from cligui.paths import data_dir
 
 log = logging.getLogger(__name__)
 
-MAX_ENTRIES = 20
+MAX_ENTRIES = 50
 
 
 class CommandHistory:
