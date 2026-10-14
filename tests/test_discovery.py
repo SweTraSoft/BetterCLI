@@ -8,6 +8,7 @@ from cligui.cache import SpecCache, make_key
 from cligui.discovery import DiscoveryError, split_command
 from cligui.discovery.runner import (
     HelpCapture,
+    capture_candidates,
     clean_text,
     fingerprint_binary,
     looks_like_help,
@@ -82,6 +83,27 @@ class TestTextCleanup:
 
     def test_normalises_line_endings(self):
         assert clean_text("a\r\nb") == "a\nb"
+
+    def test_capture_keeps_colored_display_text_and_clean_parser_text(
+        self, tmp_path, monkeypatch
+    ):
+        import cligui.discovery.runner as runner
+
+        binary = tmp_path / "tool"
+        binary.write_text("", encoding="utf-8")
+        colored = (
+            "\x1b[31mUsage: tool --flag\n  --flag  "
+            + ("description " * 4)
+            + "\x1b[0m"
+        )
+        monkeypatch.setattr(runner, "resolve_binary", lambda _name: binary)
+        monkeypatch.setattr(runner, "detect_version", lambda *_args: None)
+        monkeypatch.setattr(runner, "_run", lambda *_args: (0, colored))
+
+        capture = capture_candidates(["tool", "sub"])[0]
+
+        assert capture.display_text == colored
+        assert capture.text == clean_text(colored)
 
 
 class TestDiscoveryCache:

@@ -13,14 +13,15 @@ from PySide6.QtWidgets import (
     QLabel,
     QLineEdit,
     QMessageBox,
-    QPlainTextEdit,
     QPushButton,
+    QTextEdit,
     QVBoxLayout,
     QWidget,
 )
 
 from cligui.safety import Finding, Severity
 from cligui.settings import ENV_API_KEY, Settings, get_api_key, set_api_key
+from cligui.ui.ansi import ansi_to_html
 
 
 class SettingsDialog(QDialog):
@@ -164,14 +165,19 @@ class HelpTextDialog(QDialog):
         summary.setWordWrap(True)
         summary.setStyleSheet("color: palette(mid);")
 
-        viewer = QPlainTextEdit()
+        viewer = QTextEdit()
         viewer.setReadOnly(True)
-        viewer.setPlainText(spec.raw_help or "No help text was captured.")
-        viewer.setLineWrapMode(QPlainTextEdit.NoWrap)
+        viewer.setHtml(ansi_to_html(spec.raw_help or "No help text was captured."))
+        viewer.setLineWrapMode(QTextEdit.NoWrap)
         font = QFont("Menlo")
         font.setStyleHint(QFont.Monospace)
         font.setPointSize(12)
         viewer.setFont(font)
+        text_color = viewer.palette().text().color().name()
+        viewer.document().setDefaultStyleSheet(
+            f"pre {{ color: {text_color}; font-family: Menlo, monospace; "
+            "font-size: 12pt; }"
+        )
 
         buttons = QDialogButtonBox(QDialogButtonBox.Close)
         buttons.rejected.connect(self.reject)
@@ -189,5 +195,4 @@ class HelpTextDialog(QDialog):
         layout.addWidget(summary)
         layout.addWidget(viewer, 1)
         layout.addWidget(buttons)
-
 

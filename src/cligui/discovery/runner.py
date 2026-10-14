@@ -43,6 +43,7 @@ class HelpCapture:
     binary: Path
     fingerprint: str
     version: str | None
+    display_text: str = ""
 
 
 def resolve_binary(name: str) -> Path:
@@ -68,12 +69,13 @@ def _child_env() -> dict[str, str]:
             "GIT_PAGER": "cat",
             "MANPAGER": "cat",
             "SYSTEMD_PAGER": "cat",
-            "TERM": "dumb",
-            "NO_COLOR": "1",
-            "CLICOLOR": "0",
             "COLUMNS": "120",
         }
     )
+    if "NO_COLOR" not in env:
+        env["TERM"] = "xterm-256color"
+        env["CLICOLOR_FORCE"] = "1"
+        env["FORCE_COLOR"] = "1"
     env.pop("LESS", None)
     return env
 
@@ -100,7 +102,7 @@ def _run(argv: list[str], timeout: float, cwd: str) -> tuple[int, str]:
     except OSError as exc:
         raise DiscoveryError(f"could not run {argv[0]}: {exc}") from exc
     # Many tools print usage to stderr and exit non-zero; keep both streams.
-    return proc.returncode, clean_text(proc.stdout) + clean_text(proc.stderr)
+    return proc.returncode, (proc.stdout + proc.stderr).replace("\r\n", "\n")
 
 
 def looks_like_help(text: str) -> bool:
@@ -118,6 +120,7 @@ def detect_version(argv_prefix: list[str], timeout: float, cwd: str) -> str | No
             _, out = _run([argv_prefix[0], flag], timeout, cwd)
         except DiscoveryError:
             continue
+        out = clean_text(out)
         first = next((ln.strip() for ln in out.splitlines() if ln.strip()), "")
         if first and re.search(r"\d", first) and len(first) < 200:
             return first
@@ -141,7 +144,7 @@ def capture_man_page(command: str, timeout: float, cwd: str) -> str | None:
         code, out = _run(["man", command], timeout, cwd)
     except DiscoveryError:
         return None
-    return out if code == 0 and looks_like_help(out) else None
+    return out if code == 0 and looks_like_help(clean_text(out)) else None
 
 
 def capture_candidates(
@@ -162,7 +165,8 @@ def capture_candidates(
         version = detect_version(argv_prefix, timeout, cwd)
         fingerprint = fingerprint_binary(binary, version)
 
-        def add(text: str, origin: str) -> None:
+        def add(display_text: str, origin: str) -> None:
+            text = clean_text(display_text)
             if text in seen:
                 return
             seen.add(text)
@@ -173,6 +177,7 @@ def capture_candidates(
                     binary=binary,
                     fingerprint=fingerprint,
                     version=version,
+                    display_text=display_text,
                 )
             )
 
@@ -181,7 +186,7 @@ def capture_candidates(
                 _, out = _run([*invocation, *args], timeout, cwd)
             except DiscoveryError:
                 continue
-            if looks_like_help(out):
+            if looks_like_help(clean_text(out)):
                 add(out, " ".join(args))
 
         if len(argv_prefix) == 1 and (man := capture_man_page(argv_prefix[0], timeout, cwd)):

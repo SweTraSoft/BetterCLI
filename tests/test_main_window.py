@@ -52,7 +52,7 @@ def test_window_title_is_bettercli(window):
 
 
 def test_explore_heading_is_above_command_row(window):
-    layout = window.centralWidget().widget(1).layout()
+    layout = window.explore_heading.parentWidget().layout()
 
     assert layout.itemAt(0).widget() is window.explore_heading
     assert layout.itemAt(1).layout() is not None

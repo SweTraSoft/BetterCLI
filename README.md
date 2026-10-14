@@ -30,6 +30,8 @@ uv run bettercli
 5. **Build and run** — form values become an argv list, never a shell string.
    Risky commands prompt for confirmation first.
 
+The help-text viewer preserves ANSI colors and styles when a command provides them.
+
 ## DeepSeek API key (optional)
 
 Either set the environment variable:

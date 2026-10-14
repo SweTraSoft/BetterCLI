@@ -125,6 +125,7 @@ class DiscoveryService:
                     "improve results for commands like this one."
                 )
 
+        spec.raw_help = capture.display_text or capture.text
         if not spec.options and not spec.positionals and not spec.subcommands:
             note = note or (
                 f"No options were found in the help output of {' '.join(argv_prefix)}."

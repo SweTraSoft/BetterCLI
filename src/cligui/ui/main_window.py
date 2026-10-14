@@ -167,50 +167,69 @@ RUN_READY_STYLE = (
     "QPushButton:pressed { background-color: palette(dark); border-color: palette(dark); }"
 )
 
-_GRIP_THICKNESS = 4
-_GRIP_END_INSET = 24
+_PANE_GAP = 4
+_PANE_RADIUS = 8
+_GRIP_DOT = 3
+_GRIP_DOT_SPACING = 3
+
+
+class _Card(QWidget):
+    """Rounded pane drawn on top of the darker window backdrop."""
+
+    def paintEvent(self, event) -> None:  # noqa: N802
+        border = QColor(self.palette().color(QPalette.WindowText))
+        border.setAlpha(30)
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.Antialiasing)
+        painter.setPen(border)
+        painter.setBrush(self.palette().color(QPalette.Window))
+        painter.drawRoundedRect(
+            QRectF(self.rect()).adjusted(0.5, 0.5, -0.5, -0.5),
+            _PANE_RADIUS,
+            _PANE_RADIUS,
+        )
+
+
+class _Backdrop(QWidget):
+    def paintEvent(self, event) -> None:  # noqa: N802
+        QPainter(self).fillRect(
+            self.rect(), self.palette().color(QPalette.Window).darker(110)
+        )
 
 
 class _GripSplitterHandle(QSplitterHandle):
-    """Splitter handle drawn as a soft rounded line inset from both ends."""
+    """Transparent gap between panes with three centred grip dots."""
 
     def __init__(self, orientation: Qt.Orientation, parent: QSplitter) -> None:
         super().__init__(orientation, parent)
         self.setAttribute(Qt.WidgetAttribute.WA_Hover)
 
     def paintEvent(self, event) -> None:  # noqa: N802
-        rect = self.rect()
-        if self.orientation() == Qt.Horizontal:
-            line = QRectF(
-                (rect.width() - _GRIP_THICKNESS) / 2,
-                _GRIP_END_INSET,
-                _GRIP_THICKNESS,
-                max(0, rect.height() - 2 * _GRIP_END_INSET),
-            )
-        else:
-            line = QRectF(
-                _GRIP_END_INSET,
-                (rect.height() - _GRIP_THICKNESS) / 2,
-                max(0, rect.width() - 2 * _GRIP_END_INSET),
-                _GRIP_THICKNESS,
-            )
         if self.underMouse():
             color = self.palette().color(QPalette.Highlight)
         else:
             color = QColor(self.palette().color(QPalette.WindowText))
-            color.setAlpha(50)
+            color.setAlpha(110)
         painter = QPainter(self)
         painter.setRenderHint(QPainter.Antialiasing)
         painter.setPen(Qt.NoPen)
         painter.setBrush(color)
-        radius = _GRIP_THICKNESS / 2
-        painter.drawRoundedRect(line, radius, radius)
+        center = QRectF(self.rect()).center()
+        step = _GRIP_DOT + _GRIP_DOT_SPACING
+        for offset in (-step, 0, step):
+            if self.orientation() == Qt.Horizontal:
+                x, y = center.x(), center.y() + offset
+            else:
+                x, y = center.x() + offset, center.y()
+            painter.drawEllipse(
+                QRectF(x - _GRIP_DOT / 2, y - _GRIP_DOT / 2, _GRIP_DOT, _GRIP_DOT)
+            )
 
 
 class _GripSplitter(QSplitter):
     def __init__(self, orientation: Qt.Orientation) -> None:
         super().__init__(orientation)
-        self.setHandleWidth(10)
+        self.setHandleWidth(_PANE_GAP)
 
     def createHandle(self) -> QSplitterHandle:  # noqa: N802
         return _GripSplitterHandle(self.orientation(), self)
@@ -377,10 +396,10 @@ class MainWindow(QMainWindow):
         self.history_empty.setWordWrap(True)
         self.history_empty.setContentsMargins(10, 8, 10, 8)
 
-        sidebar = QWidget()
+        sidebar = _Card()
         sidebar.setMinimumWidth(160)
         sidebar_layout = QVBoxLayout(sidebar)
-        sidebar_layout.setContentsMargins(12, 16, 8, 12)
+        sidebar_layout.setContentsMargins(12, 12, 12, 12)
         self.clear_inputs_button = QPushButton("New Session")
         self.clear_inputs_button.setToolTip("Start a new command")
         sidebar_layout.addWidget(self.clear_inputs_button)
@@ -496,9 +515,10 @@ class MainWindow(QMainWindow):
         run_row.addWidget(self.run_button)
         run_row.addWidget(self.cancel_button)
 
-        upper = QWidget()
+        upper = _Card()
         upper_layout = QVBoxLayout(upper)
-        upper_layout.setContentsMargins(0, 0, 0, 0)
+        upper_layout.setContentsMargins(12, 12, 12, 12)
+        upper_layout.setSpacing(10)
         upper_layout.addWidget(self.form, 1)
 
         self.command_line_heading = QLabel("Command Line Interface")
@@ -514,9 +534,9 @@ class MainWindow(QMainWindow):
             heading_font.setBold(True)
             heading.setFont(heading_font)
 
-        lower = QWidget()
+        lower = _Card()
         lower_layout = QVBoxLayout(lower)
-        lower_layout.setContentsMargins(0, 0, 0, 0)
+        lower_layout.setContentsMargins(12, 12, 12, 12)
         lower_layout.setSpacing(10)
         lower_layout.addLayout(cwd_row)
         lower_layout.addWidget(self.command_line_heading)
@@ -539,28 +559,31 @@ class MainWindow(QMainWindow):
         output_layout.addWidget(self.output, 1)
         lower_layout.addWidget(output_section, 1)
 
+        upper_layout.insertWidget(0, self.explore_heading)
+        upper_layout.insertLayout(1, command_row)
+
         splitter = _GripSplitter(Qt.Vertical)
         splitter.addWidget(upper)
         splitter.addWidget(lower)
+        splitter.setChildrenCollapsible(False)
         splitter.setStretchFactor(0, 3)
         splitter.setStretchFactor(1, 2)
 
-        workspace = QWidget()
-        layout = QVBoxLayout(workspace)
-        layout.setContentsMargins(12, 12, 12, 12)
-        layout.setSpacing(10)
-        layout.addWidget(self.explore_heading)
-        layout.addLayout(command_row)
-        layout.addWidget(splitter, 1)
-
         central = _GripSplitter(Qt.Horizontal)
         central.addWidget(sidebar)
-        central.addWidget(workspace)
+        central.addWidget(splitter)
         central.setChildrenCollapsible(False)
         central.setStretchFactor(0, 0)
         central.setStretchFactor(1, 1)
         central.setSizes([220, 1000])
-        self.setCentralWidget(central)
+
+        backdrop = _Backdrop()
+        backdrop_layout = QVBoxLayout(backdrop)
+        backdrop_layout.setContentsMargins(
+            _PANE_GAP, _PANE_GAP, _PANE_GAP, _PANE_GAP
+        )
+        backdrop_layout.addWidget(central)
+        self.setCentralWidget(backdrop)
 
         self.statusBar().showMessage("Ready")
         self._build_menu()
