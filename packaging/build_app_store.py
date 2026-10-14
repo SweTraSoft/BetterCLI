@@ -53,7 +53,7 @@ def validate_profile(
 
 
 def identity_hash(identities: str, name: str) -> str:
-    matches = re.findall(r'([0-9A-F]{40}) "' + re.escape(name) + r'"', identities)
+    matches = sorted(set(re.findall(r'([0-9A-F]{40}) "' + re.escape(name) + r'"', identities)))
     if len(matches) != 1:
         raise ValueError(f"Expected one valid identity with private key named {name!r}; found {len(matches)}.")
     return matches[0]
@@ -130,7 +130,7 @@ def main() -> int:
             check=True,
         )
         subprocess.run(["codesign", "--verify", "--deep", "--strict", "--verbose=2", str(app)], check=True)
-        signed = plistlib.loads(subprocess.check_output(["codesign", "--display", "--entitlements", "-", str(app)]))
+        signed = plistlib.loads(subprocess.check_output(["codesign", "--display", "--entitlements", "-", "--xml", str(app)]))
         if signed != entitlements:
             raise ValueError("The signed app's entitlements do not match the requested entitlements.")
         subprocess.run(

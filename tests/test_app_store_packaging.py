@@ -83,10 +83,11 @@ def test_requires_unique_installed_identity():
     name = "Apple Distribution: Test (TEAM123)"
     installed = f'1) {CERTIFICATE_HASH} "{name}"'
     assert packaging.identity_hash(installed, name) == CERTIFICATE_HASH
+    assert packaging.identity_hash(f"{installed}\n{installed}", name) == CERTIFICATE_HASH
     with pytest.raises(ValueError, match="found 0"):
         packaging.identity_hash("", name)
     with pytest.raises(ValueError, match="found 2"):
-        packaging.identity_hash(f"{installed}\n{installed}", name)
+        packaging.identity_hash(f'{installed}\n2) {"A" * 40} "{name}"', name)
 
 
 def test_signed_package_workflow(profile, tmp_path, monkeypatch, capsys):
@@ -118,6 +119,7 @@ def test_signed_package_workflow(profile, tmp_path, monkeypatch, capsys):
         if command[:2] == ["security", "cms"]:
             return profile_path.read_bytes()
         assert command[:2] == ["codesign", "--display"]
+        assert "--xml" in command
         return plistlib.dumps(main_entitlements)
 
     def run(command, **kwargs):
