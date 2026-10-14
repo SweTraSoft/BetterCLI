@@ -103,7 +103,6 @@ def test_command_row_stays_aligned_when_description_is_shown(window):
             window.subcommand_combo,
             window.discover_button,
             window.help_text_button,
-            window.clear_inputs_button,
         )
     }
     assert len(centers) == 1
@@ -494,7 +493,7 @@ def test_clear_history_updates_sidebar_and_saved_history(window):
 
 
 def test_new_clears_active_command_workspace(window):
-    assert window.clear_inputs_button.text() == "New"
+    assert window.clear_inputs_button.text() == "New Session"
     spec = CommandSpec(argv_prefix=["git"], positionals=[PositionalSpec(name="repo")])
     window._spec = spec
     window.form.load(spec)
@@ -512,7 +511,7 @@ def test_new_clears_active_command_workspace(window):
 
     assert window.command_input.currentText() == ""
     assert window.command_editor.toPlainText() == ""
-    assert window.command_editor.placeholderText() == "No command configured yet."
+    assert window.command_editor.placeholderText() == "You can type here directly."
     assert window._spec is None
     assert window.form.spec is None
     assert window.cwd_input.text() == ""

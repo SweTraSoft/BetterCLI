@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 import shlex
 
-from PySide6.QtCore import QObject, QSize, Qt, QThread, QTimer, Signal
+from PySide6.QtCore import QObject, QRectF, QSize, Qt, QThread, QTimer, Signal
 from PySide6.QtGui import (
     QAction,
     QColor,
@@ -32,6 +32,7 @@ from PySide6.QtWidgets import (
     QStyledItemDelegate,
     QStyleOptionViewItem,
     QSplitter,
+    QSplitterHandle,
     QVBoxLayout,
     QWidget,
 )
@@ -165,6 +166,54 @@ RUN_READY_STYLE = (
     "}"
     "QPushButton:pressed { background-color: palette(dark); border-color: palette(dark); }"
 )
+
+_GRIP_THICKNESS = 4
+_GRIP_END_INSET = 24
+
+
+class _GripSplitterHandle(QSplitterHandle):
+    """Splitter handle drawn as a soft rounded line inset from both ends."""
+
+    def __init__(self, orientation: Qt.Orientation, parent: QSplitter) -> None:
+        super().__init__(orientation, parent)
+        self.setAttribute(Qt.WidgetAttribute.WA_Hover)
+
+    def paintEvent(self, event) -> None:  # noqa: N802
+        rect = self.rect()
+        if self.orientation() == Qt.Horizontal:
+            line = QRectF(
+                (rect.width() - _GRIP_THICKNESS) / 2,
+                _GRIP_END_INSET,
+                _GRIP_THICKNESS,
+                max(0, rect.height() - 2 * _GRIP_END_INSET),
+            )
+        else:
+            line = QRectF(
+                _GRIP_END_INSET,
+                (rect.height() - _GRIP_THICKNESS) / 2,
+                max(0, rect.width() - 2 * _GRIP_END_INSET),
+                _GRIP_THICKNESS,
+            )
+        if self.underMouse():
+            color = self.palette().color(QPalette.Highlight)
+        else:
+            color = QColor(self.palette().color(QPalette.WindowText))
+            color.setAlpha(50)
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.Antialiasing)
+        painter.setPen(Qt.NoPen)
+        painter.setBrush(color)
+        radius = _GRIP_THICKNESS / 2
+        painter.drawRoundedRect(line, radius, radius)
+
+
+class _GripSplitter(QSplitter):
+    def __init__(self, orientation: Qt.Orientation) -> None:
+        super().__init__(orientation)
+        self.setHandleWidth(10)
+
+    def createHandle(self) -> QSplitterHandle:  # noqa: N802
+        return _GripSplitterHandle(self.orientation(), self)
 
 
 class _DiscoveryWorker(QObject):
@@ -332,6 +381,9 @@ class MainWindow(QMainWindow):
         sidebar.setMinimumWidth(160)
         sidebar_layout = QVBoxLayout(sidebar)
         sidebar_layout.setContentsMargins(12, 16, 8, 12)
+        self.clear_inputs_button = QPushButton("New Session")
+        self.clear_inputs_button.setToolTip("Start a new command")
+        sidebar_layout.addWidget(self.clear_inputs_button)
         history_heading = QLabel("Recent commands")
         heading_font = history_heading.font()
         heading_font.setBold(True)
@@ -375,8 +427,6 @@ class MainWindow(QMainWindow):
             "Show the original --help output these options were read from"
         )
         self.help_text_button.setEnabled(False)
-        self.clear_inputs_button = QPushButton("New")
-        self.clear_inputs_button.setToolTip("Start a new command")
 
         self.subcommand_combo = QComboBox()
         self.subcommand_combo.setMinimumWidth(240)
@@ -400,14 +450,12 @@ class MainWindow(QMainWindow):
         self._command_fields_row.addWidget(self.subcommand_combo)
         self._command_fields_row.addWidget(self.discover_button)
         self._command_fields_row.addWidget(self.help_text_button)
-        self._command_fields_row.addWidget(self.clear_inputs_button)
         # macOS layout-item margins differ between combo boxes and buttons.
         for widget in (
             self.command_input,
             self.subcommand_combo,
             self.discover_button,
             self.help_text_button,
-            self.clear_inputs_button,
         ):
             widget.setAttribute(Qt.WidgetAttribute.WA_LayoutUsesWidgetRect)
             widget.setFixedHeight(command_field_height)
@@ -491,7 +539,7 @@ class MainWindow(QMainWindow):
         output_layout.addWidget(self.output, 1)
         lower_layout.addWidget(output_section, 1)
 
-        splitter = QSplitter(Qt.Vertical)
+        splitter = _GripSplitter(Qt.Vertical)
         splitter.addWidget(upper)
         splitter.addWidget(lower)
         splitter.setStretchFactor(0, 3)
@@ -505,7 +553,7 @@ class MainWindow(QMainWindow):
         layout.addLayout(command_row)
         layout.addWidget(splitter, 1)
 
-        central = QSplitter(Qt.Horizontal)
+        central = _GripSplitter(Qt.Horizontal)
         central.addWidget(sidebar)
         central.addWidget(workspace)
         central.setChildrenCollapsible(False)
@@ -996,7 +1044,7 @@ class MainWindow(QMainWindow):
         self._updating_preview = True
         try:
             if self._spec is None:
-                self.command_editor.setPlaceholderText("No command configured yet.")
+                self.command_editor.setPlaceholderText("You can type here directly.")
                 self.command_editor.clear()
             else:
                 values = self.form.values()
