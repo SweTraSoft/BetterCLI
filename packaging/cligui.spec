@@ -1,10 +1,14 @@
 # PyInstaller spec for the macOS app bundle.
 # Build with:  uv run pyinstaller packaging/cligui.spec
 
+import os
+import tomllib
 from pathlib import Path
 
 project_root = Path(SPECPATH).parent
 icon_assets = project_root / "packaging" / "app-icons"
+with (project_root / "pyproject.toml").open("rb") as metadata:
+    app_version = tomllib.load(metadata)["project"]["version"]
 
 a = Analysis(
     [str(project_root / "src" / "cligui" / "app.py")],
@@ -50,6 +54,8 @@ exe = EXE(
     upx=False,
     console=False,
     argv_emulation=False,
+    codesign_identity=os.environ.get("BETTERCLI_CODESIGN_IDENTITY"),
+    entitlements_file=os.environ.get("BETTERCLI_ENTITLEMENTS_FILE"),
 )
 
 coll = COLLECT(
@@ -65,11 +71,13 @@ app = BUNDLE(
     coll,
     name="BetterCLI.app",
     icon=str(project_root / "packaging" / "BetterCLI.icns"),
-    bundle_identifier="dev.bettercli.app",
+    bundle_identifier=os.environ.get("BETTERCLI_BUNDLE_ID", "com.swetrasoft.BetterCLI"),
     info_plist={
         "CFBundleName": "BetterCLI",
         "CFBundleDisplayName": "BetterCLI",
-        "CFBundleShortVersionString": "1.00",
+        "CFBundleShortVersionString": app_version,
+        "CFBundleVersion": os.environ.get("BETTERCLI_BUILD_NUMBER", "1"),
+        "LSApplicationCategoryType": "public.app-category.developer-tools",
         "NSHighResolutionCapable": True,
         "LSMinimumSystemVersion": "12.0",
     },

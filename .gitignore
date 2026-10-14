@@ -1,0 +1,8 @@
+/dist/app-store/
+/dist/packaging-check/
+/build/packaging-check/
+/packaging/__pycache__/
+*.provisionprofile
+*.mobileprovision
+*.p12
+*.pfx

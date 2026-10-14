@@ -10,6 +10,24 @@
                 "cwd": "${workspaceFolder}"
             },
             "problemMatcher": []
+        },
+        {
+            "label": "Check BetterCLI packaging",
+            "type": "process",
+            "command": "uv",
+            "args": [
+                "run",
+                "--no-sync",
+                "pyinstaller",
+                "--noconfirm",
+                "--distpath", "dist/packaging-check",
+                "--workpath", "build/packaging-check",
+                "packaging/cligui.spec"
+            ],
+            "options": {
+                "cwd": "${workspaceFolder}"
+            },
+            "problemMatcher": []
         }
     ]
 }
