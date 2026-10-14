@@ -5,22 +5,26 @@ from __future__ import annotations
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QFont
 from PySide6.QtWidgets import (
-    QCheckBox,
+    QComboBox,
     QDialog,
     QDialogButtonBox,
-    QDoubleSpinBox,
     QFormLayout,
     QLabel,
     QLineEdit,
-    QMessageBox,
     QPushButton,
     QTextEdit,
     QVBoxLayout,
     QWidget,
 )
 
+from cligui import __version__
 from cligui.safety import Finding, Severity
-from cligui.settings import ENV_API_KEY, Settings, get_api_key, set_api_key
+from cligui.settings import (
+    APPEARANCE_DARK,
+    APPEARANCE_LIGHT,
+    APPEARANCE_SYSTEM,
+    Settings,
+)
 from cligui.ui.ansi import ansi_to_html
 
 
@@ -28,43 +32,27 @@ class SettingsDialog(QDialog):
     def __init__(self, settings: Settings, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self.setWindowTitle("Settings")
-        self.setMinimumWidth(460)
+        self.setMinimumWidth(360)
         self._settings = settings
 
         form = QFormLayout()
-        self._dark_mode = QCheckBox("Use dark appearance")
-        self._dark_mode.setChecked(settings.dark_mode)
-
-        self._llm_enabled = QCheckBox("Use DeepSeek when --help cannot be parsed")
-        self._llm_enabled.setChecked(settings.llm_enabled)
-
-        self._api_key = QLineEdit()
-        self._api_key.setEchoMode(QLineEdit.Password)
-        self._api_key.setPlaceholderText(
-            "stored in your Keychain" if get_api_key() is None else "unchanged"
+        self._appearance = QComboBox()
+        for label, value in (
+            ("Light", APPEARANCE_LIGHT),
+            ("Dark", APPEARANCE_DARK),
+            ("Follow system", APPEARANCE_SYSTEM),
+        ):
+            self._appearance.addItem(label, value)
+        index = self._appearance.findData(settings.appearance)
+        self._appearance.setCurrentIndex(
+            index if index >= 0 else self._appearance.findData(APPEARANCE_SYSTEM)
         )
 
-        self._base_url = QLineEdit(settings.base_url)
-        self._model = QLineEdit(settings.model)
+        form.addRow("Appearance", self._appearance)
 
-        self._timeout = QDoubleSpinBox()
-        self._timeout.setRange(1.0, 120.0)
-        self._timeout.setSuffix(" s")
-        self._timeout.setValue(settings.discovery_timeout)
-
-        form.addRow("Appearance", self._dark_mode)
-        form.addRow("LLM fallback", self._llm_enabled)
-        form.addRow("API key", self._api_key)
-        form.addRow("Base URL", self._base_url)
-        form.addRow("Model", self._model)
-        form.addRow("Discovery timeout", self._timeout)
-
-        note = QLabel(
-            f"The {ENV_API_KEY} environment variable overrides the stored key. "
-            "Help text is sent to DeepSeek only when the built-in parser is unsure."
-        )
-        note.setWordWrap(True)
-        note.setStyleSheet("color: palette(mid);")
+        self._version = QLabel(__version__)
+        self._version.setTextInteractionFlags(Qt.TextSelectableByMouse)
+        form.addRow("Version", self._version)
 
         buttons = QDialogButtonBox(QDialogButtonBox.Save | QDialogButtonBox.Cancel)
         buttons.accepted.connect(self.accept)
@@ -72,23 +60,11 @@ class SettingsDialog(QDialog):
 
         layout = QVBoxLayout(self)
         layout.addLayout(form)
-        layout.addWidget(note)
         layout.addWidget(buttons)
 
     def accept(self) -> None:
-        self._settings.dark_mode = self._dark_mode.isChecked()
-        self._settings.llm_enabled = self._llm_enabled.isChecked()
-        self._settings.base_url = self._base_url.text().strip() or self._settings.base_url
-        self._settings.model = self._model.text().strip() or self._settings.model
-        self._settings.discovery_timeout = self._timeout.value()
+        self._settings.appearance = self._appearance.currentData()
         self._settings.save()
-        if key := self._api_key.text().strip():
-            if not set_api_key(key):
-                QMessageBox.warning(
-                    self,
-                    "Could not save the key",
-                    f"Your keychain refused the write. Set {ENV_API_KEY} instead.",
-                )
         super().accept()
 
 

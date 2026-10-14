@@ -69,7 +69,7 @@ app = BUNDLE(
     info_plist={
         "CFBundleName": "BetterCLI",
         "CFBundleDisplayName": "BetterCLI",
-        "CFBundleShortVersionString": "0.1.0",
+        "CFBundleShortVersionString": "1.00",
         "NSHighResolutionCapable": True,
         "LSMinimumSystemVersion": "12.0",
     },

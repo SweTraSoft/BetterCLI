@@ -9,10 +9,62 @@ from PySide6.QtCore import Qt
 from PySide6.QtGui import QColor, QIcon, QPalette
 from PySide6.QtWidgets import QApplication, QToolTip
 
+from cligui.settings import (
+    APPEARANCE_DARK,
+    APPEARANCE_SYSTEM,
+    APPEARANCES,
+)
+
 _NATIVE_STYLE_PROPERTY = "_bettercli_native_style"
+_APPEARANCE_PROPERTY = "_bettercli_appearance"
+_WATCHING_PROPERTY = "_bettercli_watching_color_scheme"
 
 
-def apply_theme(application: QApplication, dark_mode: bool) -> None:
+def apply_theme(application: QApplication, appearance: str) -> None:
+    """Apply "light", "dark", or "system" (follow the OS colour scheme)."""
+    if appearance not in APPEARANCES:
+        appearance = APPEARANCE_SYSTEM
+    application.setProperty(_APPEARANCE_PROPERTY, appearance)
+    _watch_system_color_scheme(application)
+
+    # Native chrome (title bar, menus, file dialogs) follows this, not the palette.
+    style_hints = application.styleHints()
+    if appearance == APPEARANCE_SYSTEM:
+        if hasattr(style_hints, "unsetColorScheme"):
+            style_hints.unsetColorScheme()
+        dark_mode = system_prefers_dark(application)
+    else:
+        dark_mode = appearance == APPEARANCE_DARK
+        if hasattr(style_hints, "setColorScheme"):
+            style_hints.setColorScheme(
+                Qt.ColorScheme.Dark if dark_mode else Qt.ColorScheme.Light
+            )
+    _apply_colors(application, dark_mode)
+
+
+def system_prefers_dark(application: QApplication) -> bool:
+    style_hints = application.styleHints()
+    if hasattr(style_hints, "colorScheme"):
+        return style_hints.colorScheme() == Qt.ColorScheme.Dark
+    return False
+
+
+def _watch_system_color_scheme(application: QApplication) -> None:
+    style_hints = application.styleHints()
+    if application.property(_WATCHING_PROPERTY) or not hasattr(
+        style_hints, "colorSchemeChanged"
+    ):
+        return
+    application.setProperty(_WATCHING_PROPERTY, True)
+
+    def on_changed(scheme: Qt.ColorScheme) -> None:
+        if application.property(_APPEARANCE_PROPERTY) == APPEARANCE_SYSTEM:
+            _apply_colors(application, scheme == Qt.ColorScheme.Dark)
+
+    style_hints.colorSchemeChanged.connect(on_changed)
+
+
+def _apply_colors(application: QApplication, dark_mode: bool) -> None:
     if getattr(sys, "frozen", False):
         icon_directory = Path(sys._MEIPASS)
     else:
@@ -23,13 +75,6 @@ def apply_theme(application: QApplication, dark_mode: bool) -> None:
         )
     icon_name = "BetterCLI-dark.png" if dark_mode else "BetterCLI-light.png"
     application.setWindowIcon(QIcon(str(icon_directory / icon_name)))
-
-    # Native chrome (title bar, menus, file dialogs) follows this, not the palette.
-    style_hints = application.styleHints()
-    if hasattr(style_hints, "setColorScheme"):
-        style_hints.setColorScheme(
-            Qt.ColorScheme.Dark if dark_mode else Qt.ColorScheme.Light
-        )
 
     # The native macOS style ignores most palette roles, so dark mode uses Fusion.
     native_style = application.property(_NATIVE_STYLE_PROPERTY)

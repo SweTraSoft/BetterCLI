@@ -113,16 +113,16 @@ class DiscoveryService:
                     )
                     if len(improved.options) >= len(spec.options):
                         spec = improved
-                        note = "Options were reconstructed by DeepSeek."
+                        note = "Options were reconstructed by the LLM."
                     else:
-                        note = "DeepSeek found fewer options than the parser; kept the parsed result."
+                        note = "The LLM found fewer options than the parser; kept the parsed result."
                 except llm.LLMUnavailable as exc:
                     log.info("LLM fallback unavailable: %s", exc)
-                    note = f"Low-confidence parse; DeepSeek fallback unavailable ({exc})."
+                    note = f"Low-confidence parse; LLM fallback unavailable ({exc})."
             else:
                 note = (
-                    "Low-confidence parse. Add a DeepSeek API key in Settings to "
-                    "improve results for commands like this one."
+                    "Low-confidence parse; some options for this command may be "
+                    "missing."
                 )
 
         spec.raw_help = capture.display_text or capture.text

@@ -85,7 +85,7 @@ def _client(settings: Settings):
     key = get_api_key()
     if not key:
         raise LLMUnavailable(
-            "No DeepSeek API key configured. Set DEEPSEEK_API_KEY or add one in Settings."
+            "No LLM API key configured."
         )
     try:
         from openai import OpenAI
@@ -119,7 +119,7 @@ def extract_spec(
     """Ask the model to describe ``help_text``; raises :class:`LLMUnavailable`."""
     settings = settings or Settings.load()
     if not settings.llm_enabled:
-        raise LLMUnavailable("the LLM fallback is disabled in Settings")
+        raise LLMUnavailable("the LLM fallback is disabled")
     client = client or _client(settings)
 
     messages = [
@@ -157,7 +157,7 @@ def extract_spec(
                     ]
                 )
         except Exception as exc:
-            raise LLMUnavailable(f"DeepSeek request failed: {exc}") from exc
+            raise LLMUnavailable(f"LLM request failed: {exc}") from exc
 
     if payload is None:
         raise LLMUnavailable(f"the model returned unusable JSON: {last_error}")

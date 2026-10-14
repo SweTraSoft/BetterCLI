@@ -168,11 +168,11 @@ def test_settings_button_is_at_bottom_of_sidebar_and_opens_dialog(window, monkey
     dialog.exec.assert_called_once_with()
 
 
-def test_saving_dark_mode_applies_palette_without_restart(window, monkeypatch):
+def test_saving_appearance_applies_palette_without_restart(window, monkeypatch):
     accepted = main_window.SettingsDialog.Accepted
     dialog = Mock()
     dialog.exec.side_effect = lambda: (
-        setattr(window.settings, "dark_mode", True),
+        setattr(window.settings, "appearance", "dark"),
         accepted,
     )[1]
     dialog_class = Mock(return_value=dialog)
@@ -183,7 +183,7 @@ def test_saving_dark_mode_applies_palette_without_restart(window, monkeypatch):
 
     window._open_settings()
 
-    apply_theme.assert_called_once_with(QApplication.instance(), True)
+    apply_theme.assert_called_once_with(QApplication.instance(), "dark")
     assert window._command_input_palette.color(QPalette.ColorRole.Base) == (
         window.command_input.lineEdit()
         .palette()

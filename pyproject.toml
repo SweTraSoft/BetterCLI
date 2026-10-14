@@ -1,6 +1,6 @@
 [project]
 name = "bettercli"
-version = "0.1.0"
+version = "1.00"
 description = "Turn any CLI command into an on-the-fly graphical form."
 readme = "README.md"
 authors = [

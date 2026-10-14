@@ -18,10 +18,15 @@ ENV_API_KEY = "DEEPSEEK_API_KEY"
 DEFAULT_BASE_URL = "https://api.deepseek.com"
 DEFAULT_MODEL = "deepseek-chat"
 
+APPEARANCE_LIGHT = "light"
+APPEARANCE_DARK = "dark"
+APPEARANCE_SYSTEM = "system"
+APPEARANCES = (APPEARANCE_LIGHT, APPEARANCE_DARK, APPEARANCE_SYSTEM)
+
 
 @dataclass
 class Settings:
-    dark_mode: bool = False
+    appearance: str = APPEARANCE_SYSTEM
     llm_enabled: bool = True
     base_url: str = DEFAULT_BASE_URL
     model: str = DEFAULT_MODEL
@@ -38,8 +43,16 @@ class Settings:
         except (OSError, ValueError) as exc:
             log.warning("ignoring unreadable settings file %s: %s", path, exc)
             return cls()
+        if not isinstance(raw, dict):
+            return cls()
+        # Older versions stored a boolean "dark_mode" instead of "appearance".
+        if "appearance" not in raw and raw.get("dark_mode") is True:
+            raw["appearance"] = APPEARANCE_DARK
         known = {f for f in cls().__dataclass_fields__}
-        return cls(**{k: v for k, v in raw.items() if k in known})
+        settings = cls(**{k: v for k, v in raw.items() if k in known})
+        if settings.appearance not in APPEARANCES:
+            settings.appearance = APPEARANCE_SYSTEM
+        return settings
 
     def save(self) -> None:
         path = data_dir() / "settings.json"

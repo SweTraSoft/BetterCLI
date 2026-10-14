@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 import shlex
 
-from PySide6.QtCore import QObject, QRectF, QSize, Qt, QThread, QTimer, Signal
+from PySide6.QtCore import QEvent, QObject, QRectF, QSize, Qt, QThread, QTimer, Signal
 from PySide6.QtGui import (
     QAction,
     QColor,
@@ -706,6 +706,7 @@ class MainWindow(QMainWindow):
         self._search_timer.start()
 
     def _set_command_input_invalid(self, invalid: bool) -> None:
+        self._command_input_invalid = invalid
         line_edit = self.command_input.lineEdit()
         if not invalid:
             line_edit.setPalette(self._command_input_palette)
@@ -1200,12 +1201,26 @@ class MainWindow(QMainWindow):
             self.service.settings = self.settings
             application = QApplication.instance()
             if application is not None:
-                apply_theme(application, self.settings.dark_mode)
-                palette = QPalette(application.palette())
-                self.command_input.lineEdit().setPalette(palette)
-                self._command_input_palette = QPalette(palette)
+                apply_theme(application, self.settings.appearance)
+                self._sync_command_input_palette(application)
                 self._set_command_input_invalid(False)
             self.statusBar().showMessage("Settings saved")
+
+    def _sync_command_input_palette(self, application: QApplication) -> None:
+        palette = QPalette(application.palette())
+        self.command_input.lineEdit().setPalette(palette)
+        self._command_input_palette = QPalette(palette)
+
+    def changeEvent(self, event) -> None:
+        super().changeEvent(event)
+        # Following the system appearance can swap the palette while the app runs.
+        if event.type() == QEvent.Type.ApplicationPaletteChange:
+            application = QApplication.instance()
+            if application is not None and hasattr(self, "_command_input_palette"):
+                self._sync_command_input_palette(application)
+                self._set_command_input_invalid(
+                    getattr(self, "_command_input_invalid", False)
+                )
 
     def _show_help_text(self) -> None:
         if self._spec is not None:

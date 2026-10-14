@@ -22,7 +22,7 @@ uv run bettercli
 2. **Parse** — a heuristic parser reads the usage line and option blocks,
    recognising argparse, click, getopt and BSD man-page conventions. It infers
    each option's type from its metavar (`FILE`, `DIR`, `N`, `{a,b,c}`, `X...`).
-3. **Fall back** — if the parse looks weak, the help text is sent to DeepSeek,
+3. **Fall back** — if the parse looks weak, the help text is sent to an LLM,
    which returns a structured spec. This is optional; without an API key the
    parsed result is used and the window says so.
 4. **Cache** — the result is stored under `~/Library/Caches/cligui/specs`,
@@ -32,19 +32,19 @@ uv run bettercli
 
 The help-text viewer preserves ANSI colors and styles when a command provides them.
 
-## DeepSeek API key (optional)
+## Appearance
 
-Either set the environment variable:
+Under **Tools › Settings…**, choose **Light**, **Dark**, or **Follow system**
+(the default), which tracks the macOS appearance while the app is running.
 
-```sh
-export DEEPSEEK_API_KEY=sk-...
-```
+## App Store version enforcement
 
-or add the key under **Tools › Settings…**, where it is stored in your
-Keychain. The base URL and model are configurable in the same dialog.
-
-The LLM is only consulted for commands the built-in parser cannot read; most
-common tools never reach it.
+When BetterCLI is listed on the Apple App Store, set `APP_STORE_ID` in
+`src/cligui/updates.py` to its numeric listing ID. At startup, the app checks
+Apple's lookup service and blocks outdated versions. If the service is
+unavailable, BetterCLI permits offline use for up to 28 days after its last
+successful check (or first offline launch); after that, it requires a
+successful check before opening.
 
 ## Notes and limits
 

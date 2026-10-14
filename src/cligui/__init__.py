@@ -1,3 +1,3 @@
 """Public package surface for cligui."""
 
-__version__ = "0.1.0"
+__version__ = "1.00"
