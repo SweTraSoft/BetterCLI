@@ -51,6 +51,17 @@ successful check before opening.
 - Only one command per window. Pipes, redirection and `&&` are rejected by
   design — there is no shell anywhere in the execution path.
 - Subcommands work by typing the full path, e.g. `git log` or `docker compose`.
+- Absolute executable paths are supported. The editable command and preview retain
+  the full path, while subcommand headings use the executable's filename. Hover over
+  the command field to see a long path in full.
+- On macOS, when a command name resolves to `/usr/bin/git` or `/usr/bin/make`,
+  discovery and execution use the actual executable in the developer directory
+  reported by `xcode-select --print-path`, avoiding the system developer-tool
+  launcher. This supports Xcode (including renamed installations) and Command Line
+  Tools. Custom installations found first on PATH and explicitly entered paths
+  are preserved. If developer-tool resolution fails, BetterCLI reports the error;
+  you can enter the actual executable's full path instead. This does not grant
+  additional sandbox permissions. Failed help scans include the underlying errors.
 - Recent commands in the left sidebar retain their output, last executed command,
   and working directory across app restarts. Double-click an entry or press Enter
   to reopen it without running it. Repeated runs append to that command's output;

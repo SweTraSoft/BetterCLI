@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from PySide6.QtCore import QObject, QProcess, QProcessEnvironment, Signal
 
-from cligui.discovery.runner import clean_text
+from cligui.discovery.runner import DiscoveryError, clean_text, resolve_binary
 
 #: Grace period before a cancelled process is killed outright.
 KILL_AFTER_MS = 3000
@@ -35,9 +35,14 @@ class CommandRunner(QObject):
         if not argv:
             raise ValueError("nothing to run")
 
+        try:
+            program = str(resolve_binary(argv[0]))
+        except DiscoveryError as exc:
+            raise RuntimeError(str(exc)) from exc
+
         self._cancelled = False
         process = QProcess(self)
-        process.setProgram(argv[0])
+        process.setProgram(program)
         process.setArguments(argv[1:])
         process.setProcessChannelMode(QProcess.MergedChannels)
         if cwd:
@@ -57,7 +62,7 @@ class CommandRunner(QObject):
 
         self._process = process
         process.start()
-        self.started.emit(argv[0])
+        self.started.emit(program)
 
     def cancel(self) -> None:
         if not self.running or self._process is None:

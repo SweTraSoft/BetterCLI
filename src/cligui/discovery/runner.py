@@ -8,14 +8,17 @@ directory, and is killed on timeout.
 from __future__ import annotations
 
 import os
+import logging
 import re
 import shutil
 import subprocess
+import sys
 import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 
 DEFAULT_TIMEOUT = 10.0
+log = logging.getLogger(__name__)
 
 #: Tried in order; the first response that looks like help text wins.
 HELP_ARGS: tuple[tuple[str, ...], ...] = (
@@ -58,7 +61,38 @@ def resolve_binary(name: str) -> Path:
     found = shutil.which(name)
     if not found:
         raise CommandNotFoundError(f"{name!r} was not found on your PATH")
-    return Path(found).resolve()
+    binary = Path(found).resolve()
+    if sys.platform == "darwin" and binary in (Path("/usr/bin/git"), Path("/usr/bin/make")):
+        try:
+            selected = subprocess.run(
+                ["/usr/bin/xcode-select", "--print-path"],
+                capture_output=True,
+                stdin=subprocess.DEVNULL,
+                timeout=DEFAULT_TIMEOUT,
+                text=True,
+                errors="replace",
+            )
+        except (OSError, subprocess.TimeoutExpired) as exc:
+            raise DiscoveryError(
+                f"Could not locate the developer-tool executable for {name}: {exc}. "
+                "Enter the executable's full path instead."
+            ) from exc
+        if selected.returncode != 0 or not selected.stdout.strip():
+            detail = clean_text(selected.stderr).strip()[:800] or "No developer directory was returned."
+            raise DiscoveryError(
+                f"Could not locate the developer-tool executable for {name}: {detail} "
+                "Install/select Xcode or Command Line Tools, or enter the executable's full path."
+            )
+        developer_dir = Path(selected.stdout.strip())
+        executable = developer_dir / "usr" / "bin" / binary.name
+        if not developer_dir.is_absolute() or not executable.is_file() or not os.access(executable, os.X_OK):
+            raise DiscoveryError(
+                f"The selected developer tool {executable} is not an executable accessible to BetterCLI. "
+                "Check your developer-tools installation or enter the executable's full path."
+            )
+        log.info("Using developer-tool executable %s instead of %s", executable, binary)
+        return executable.resolve()
+    return binary
 
 
 def _child_env() -> dict[str, str]:
@@ -160,9 +194,10 @@ def capture_candidates(
     invocation = [str(binary), *argv_prefix[1:]]
     candidates: list[HelpCapture] = []
     seen: set[str] = set()
+    failures: list[str] = []
 
     with tempfile.TemporaryDirectory(prefix="cligui-") as cwd:
-        version = detect_version(argv_prefix, timeout, cwd)
+        version = detect_version(invocation, timeout, cwd)
         fingerprint = fingerprint_binary(binary, version)
 
         def add(display_text: str, origin: str) -> None:
@@ -183,17 +218,22 @@ def capture_candidates(
 
         for args in HELP_ARGS:
             try:
-                _, out = _run([*invocation, *args], timeout, cwd)
-            except DiscoveryError:
+                code, out = _run([*invocation, *args], timeout, cwd)
+            except DiscoveryError as exc:
+                failures.append(f"{' '.join(args)}: {exc}")
                 continue
             if looks_like_help(clean_text(out)):
                 add(out, " ".join(args))
+            else:
+                detail = clean_text(out).strip()[:800] or "No output."
+                failures.append(f"{' '.join(args)} (exit {code}): {detail}")
 
         if len(argv_prefix) == 1 and (man := capture_man_page(argv_prefix[0], timeout, cwd)):
             add(man, "man")
 
     if not candidates:
         raise DiscoveryError(
-            f"{' '.join(argv_prefix)} produced no recognisable help output"
+            f"{' '.join(argv_prefix)} produced no recognisable help output "
+            f"from {binary}.\n\n" + "\n\n".join(failures)
         )
     return candidates

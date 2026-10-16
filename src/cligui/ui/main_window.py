@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import shlex
+from pathlib import Path
 
 from PySide6.QtCore import QEvent, QObject, QRectF, QSize, Qt, QThread, QTimer, Signal
 from PySide6.QtGui import (
@@ -651,7 +652,8 @@ class MainWindow(QMainWindow):
 
     def _update_command_input_width(self, command: str) -> None:
         text_width = self.command_input.lineEdit().fontMetrics().horizontalAdvance(command)
-        self.command_input.setMinimumWidth(max(160, text_width + 64))
+        self.command_input.setMinimumWidth(max(160, min(360, text_width + 64)))
+        self.command_input.lineEdit().setToolTip(command)
 
     # ----- discovery ----------------------------------------------------
 
@@ -853,7 +855,7 @@ class MainWindow(QMainWindow):
                 combo.blockSignals(True)
                 combo.clear()
                 combo.addItem(
-                    f"{owner[-1]} subcommands ({len(spec.subcommands)})…",
+                    f"{Path(owner[0]).name if len(owner) == 1 else owner[-1]} subcommands ({len(spec.subcommands)})…",
                     userData=None,
                 )
                 for subcommand in spec.subcommands:
@@ -890,7 +892,7 @@ class MainWindow(QMainWindow):
         except DiscoveryError:
             argv = []
 
-        description = COMMAND_DESCRIPTIONS.get(argv[0], "") if argv else ""
+        description = COMMAND_DESCRIPTIONS.get(Path(argv[0]).name, "") if argv else ""
 
         self.command_description.setText(description)
         self.command_description.setToolTip(description)

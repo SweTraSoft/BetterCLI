@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 from types import SimpleNamespace
+from pathlib import Path
+import subprocess
 
 import pytest
 
@@ -16,6 +18,7 @@ from cligui.discovery.runner import (
 )
 from cligui.discovery.service import DiscoveryService
 from cligui.model.spec import CommandSpec
+from cligui.discovery import runner
 
 
 class TestSplitCommand:
@@ -72,6 +75,117 @@ class TestResolveBinary:
         target.write_text("x", encoding="utf-8")
         with pytest.raises(DiscoveryError, match="executable"):
             resolve_binary(str(target))
+
+    @pytest.mark.parametrize("command", ["git", "make"])
+    @pytest.mark.parametrize(
+        "developer_directory",
+        ["/Applications/Custom Xcode.app/Contents/Developer", "/Library/Developer/CommandLineTools"],
+    )
+    def test_apple_launchers_use_selected_developer_tools(
+        self, monkeypatch, command, developer_directory
+    ):
+        monkeypatch.setattr(runner.sys, "platform", "darwin")
+        monkeypatch.setattr(runner.shutil, "which", lambda _name: f"/usr/bin/{command}")
+        selected = Path(developer_directory) / "usr" / "bin" / command
+        monkeypatch.setattr(Path, "is_file", lambda path: path == selected)
+        monkeypatch.setattr(runner.os, "access", lambda path, _mode: path == selected)
+        calls = []
+
+        def select(argv, **kwargs):
+            calls.append(argv)
+            assert kwargs["stdin"] is subprocess.DEVNULL
+            assert kwargs["timeout"] > 0
+            return SimpleNamespace(returncode=0, stdout=developer_directory + "\n", stderr="")
+
+        monkeypatch.setattr(runner.subprocess, "run", select)
+        assert resolve_binary(command) == selected
+        assert calls == [["/usr/bin/xcode-select", "--print-path"]]
+
+    @pytest.mark.parametrize("platform", ["darwin", "linux"])
+    def test_custom_git_is_not_replaced(self, monkeypatch, tmp_path, platform):
+        binary = tmp_path / "git"
+        binary.touch()
+        binary.chmod(0o755)
+        monkeypatch.setattr(runner.sys, "platform", platform)
+        monkeypatch.setattr(runner.shutil, "which", lambda _name: str(binary))
+        monkeypatch.setattr(
+            runner.subprocess, "run",
+            lambda *_args, **_kwargs: pytest.fail("Custom installations must not invoke xcode-select"),
+        )
+        assert resolve_binary("git") == binary.resolve()
+        assert resolve_binary(str(binary)) == binary.resolve()
+
+    def test_explicit_launcher_path_is_preserved(self, monkeypatch):
+        monkeypatch.setattr(Path, "is_file", lambda _path: True)
+        monkeypatch.setattr(runner.os, "access", lambda *_args: True)
+        monkeypatch.setattr(
+            runner.subprocess, "run",
+            lambda *_args, **_kwargs: pytest.fail("Explicit paths must not invoke xcode-select"),
+        )
+        assert resolve_binary("/usr/bin/git") == Path("/usr/bin/git").resolve()
+
+    def test_developer_selection_failure_is_explicit(self, monkeypatch):
+        monkeypatch.setattr(runner.sys, "platform", "darwin")
+        monkeypatch.setattr(runner.shutil, "which", lambda _name: "/usr/bin/git")
+        monkeypatch.setattr(
+            runner.subprocess, "run",
+            lambda *_args, **_kwargs: SimpleNamespace(
+                returncode=1, stdout="", stderr="xcode-select: no active developer directory",
+            ),
+        )
+        with pytest.raises(DiscoveryError, match="no active developer directory"):
+            resolve_binary("git")
+
+    def test_missing_selected_tool_is_explicit(self, monkeypatch):
+        monkeypatch.setattr(runner.sys, "platform", "darwin")
+        monkeypatch.setattr(runner.shutil, "which", lambda _name: "/usr/bin/make")
+        monkeypatch.setattr(Path, "is_file", lambda _path: False)
+        monkeypatch.setattr(
+            runner.subprocess, "run",
+            lambda *_args, **_kwargs: SimpleNamespace(
+                returncode=0, stdout="/missing/developer", stderr="",
+            ),
+        )
+        with pytest.raises(DiscoveryError, match="not an executable"):
+            resolve_binary("make")
+
+
+def test_capture_uses_resolved_binary_for_version_and_help(tmp_path, monkeypatch):
+    binary = tmp_path / "git"
+    binary.touch()
+    calls = []
+    monkeypatch.setattr(runner, "resolve_binary", lambda _name: binary)
+    monkeypatch.setattr(runner, "capture_man_page", lambda *_args: None)
+
+    def run(argv, *_args):
+        calls.append(argv)
+        if argv[1] == "--version":
+            return 0, "git version 2.50.1"
+        return 0, "usage: git [options] <command>\n  --help  Show help information"
+
+    monkeypatch.setattr(runner, "_run", run)
+    captures = capture_candidates(["git"])
+    assert captures[0].version == "git version 2.50.1"
+    assert all(argv[0] == str(binary) for argv in calls)
+
+
+def test_failed_help_scan_preserves_underlying_errors(tmp_path, monkeypatch):
+    binary = tmp_path / "git"
+    binary.touch()
+    monkeypatch.setattr(runner, "resolve_binary", lambda _name: binary)
+    monkeypatch.setattr(runner, "detect_version", lambda *_args: None)
+    monkeypatch.setattr(runner, "capture_man_page", lambda *_args: None)
+
+    def run(argv, *_args):
+        if argv[1] == "--help":
+            raise DiscoveryError("Operation not permitted")
+        return 1, "developer tool launcher failed"
+
+    monkeypatch.setattr(runner, "_run", run)
+    with pytest.raises(DiscoveryError) as error:
+        capture_candidates(["git"])
+    assert "Operation not permitted" in str(error.value)
+    assert "developer tool launcher failed" in str(error.value)
 
 
 class TestTextCleanup:

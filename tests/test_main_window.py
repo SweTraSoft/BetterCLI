@@ -209,6 +209,34 @@ def test_command_input_remains_readable_with_subcommands(window, command):
     assert editor.contentsRect().width() >= text_width + 30
 
 
+def test_absolute_executable_path_keeps_subcommand_labels_compact(window, monkeypatch):
+    executable = "/Applications/Xcode.app/Contents/Developer/usr/bin/git"
+    window.command_input.setCurrentText(executable)
+    window._on_discovered(
+        CommandSpec(
+            argv_prefix=[executable],
+            subcommands=[SubcommandSpec(name="log", help="Show commit logs")],
+        ),
+        SimpleNamespace(from_cache=False, note=None),
+    )
+
+    assert window.subcommand_combo.itemText(0) == "git subcommands (1)…"
+    assert window.command_description.text() == "Track changes and manage version history"
+    assert window.command_input.minimumWidth() <= 360
+    assert window.command_input.lineEdit().toolTip() == executable
+    assert window.command_input.currentText() == executable
+    assert window.command_editor.toPlainText() == executable
+    assert executable in window.subcommand_combo.toolTip()
+
+    discover = Mock()
+    monkeypatch.setattr(window, "discover", discover)
+    window._open_subcommand(1)
+
+    discover.assert_called_once_with(argv=[executable, "log"])
+    assert window.command_input.currentText() == executable
+    assert window.command_editor.toPlainText() == f"{executable} log"
+
+
 def test_history_sidebar_shows_latest_commands_and_preserves_input(window):
     assert not window.history_empty.isHidden()
     window.command_input.setCurrentText("unfinished input")
