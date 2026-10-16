@@ -18,6 +18,7 @@ from PySide6.QtWidgets import (
 
 from cligui.builder import FormValues
 from cligui.model.spec import CommandSpec
+from cligui.ui.i18n import tr
 from cligui.ui.widgets import Editor, editor_for_option, editor_for_positional
 
 #: Man-page descriptions run to paragraphs; show a lead-in and keep the rest on hover.
@@ -64,7 +65,9 @@ class FormView(QScrollArea):
         self._positional_editors: dict[str, Editor] = {}
         self._rows: list[_Row] = []
         self._groups: list[QGroupBox] = []
+        self._group_titles: dict[QGroupBox, str] = {}
         self._extra_group: QWidget | None = None
+        self._extra_label: QLabel | None = None
         self._extra = QLineEdit()
 
         self._body = QWidget()
@@ -72,7 +75,7 @@ class FormView(QScrollArea):
         self._layout.setContentsMargins(12, 12, 12, 12)
         self._layout.setSpacing(12)
         self.setWidget(self._body)
-        self._show_placeholder("Enter a command above and press Discover.")
+        self._show_placeholder(tr("Enter a command above and press Discover."))
 
     @property
     def spec(self) -> CommandSpec | None:
@@ -83,7 +86,9 @@ class FormView(QScrollArea):
         self._positional_editors.clear()
         self._rows.clear()
         self._groups.clear()
+        self._group_titles.clear()
         self._extra_group = None
+        self._extra_label = None
         while (item := self._layout.takeAt(0)) is not None:
             if widget := item.widget():
                 widget.deleteLater()
@@ -99,13 +104,32 @@ class FormView(QScrollArea):
         self._layout.addStretch(1)
 
     def _add_group(self, title: str) -> QFormLayout:
-        group = QGroupBox(title)
+        group = QGroupBox(tr(title))
         form = QFormLayout(group)
         form.setLabelAlignment(Qt.AlignRight | Qt.AlignVCenter)
         form.setFieldGrowthPolicy(QFormLayout.AllNonFixedFieldsGrow)
         self._layout.addWidget(group)
         self._groups.append(group)
+        self._group_titles[group] = title
         return form
+
+    def retranslate(self) -> None:
+        spec = self._spec
+        if spec is None:
+            self._show_placeholder(tr("Enter a command above and press Discover."))
+            return
+
+        values = self.values()
+        self.blockSignals(True)
+        self.load(spec)
+        for name, value in values.options.items():
+            if editor := self._option_editors.get(name):
+                editor.set_value(value)
+        for name, value in values.positionals.items():
+            if editor := self._positional_editors.get(name):
+                editor.set_value(value)
+        self._extra.setText(shlex.join(values.extra))
+        self.blockSignals(False)
 
     def _add_row(self, form: QFormLayout, title: str, help_text: str, editor: Editor):
         label = QLabel(title)
@@ -146,7 +170,7 @@ class FormView(QScrollArea):
                     positional, allow_directory=Path(spec.argv_prefix[0]).name == "mv"
                 )
                 self._positional_editors[positional.name] = editor
-                suffix = "" if positional.required else " (optional)"
+                suffix = "" if positional.required else f" ({tr('optional')})"
                 self._add_row(form, positional.name + suffix, positional.help, editor)
 
         required = [opt for opt in spec.options if opt.required]
@@ -164,14 +188,17 @@ class FormView(QScrollArea):
         extra_form = self._add_group("Additional arguments")
         self._extra_group = extra_form.parentWidget()
         self._extra = QLineEdit()
-        self._extra.setPlaceholderText("Anything not listed above, e.g. --flag value")
+        self._extra.setPlaceholderText(
+            tr("Anything not listed above, e.g. --flag value")
+        )
         self._extra.textChanged.connect(self.changed)
-        extra_form.addRow(QLabel("extra"), self._extra)
+        self._extra_label = QLabel(tr("extra"))
+        extra_form.addRow(self._extra_label, self._extra)
 
         if not spec.options and not spec.positionals:
             hint = QLabel(
-                "No options were discovered for this command. You can still pass "
-                "arguments using the field above."
+                tr("No options were discovered for this command. You can still pass "
+                   "arguments using the field above.")
             )
             hint.setWordWrap(True)
             hint.setStyleSheet("color: palette(mid);")
@@ -219,4 +246,4 @@ class FormView(QScrollArea):
         self.changed.emit()
 
     def clear(self) -> None:
-        self._show_placeholder("Enter a command above and press Discover.")
+        self._show_placeholder(tr("Enter a command above and press Discover."))

@@ -5,6 +5,8 @@ from __future__ import annotations
 from PySide6.QtGui import QFont, QTextCursor
 from PySide6.QtWidgets import QPlainTextEdit, QWidget
 
+from cligui.ui.i18n import tr
+
 #: Keeps a long-running command from growing the document without bound.
 MAX_BLOCKS = 5000
 ROUNDED_FIELD_STYLE = (
@@ -23,7 +25,7 @@ class OutputView(QPlainTextEdit):
         super().__init__(parent)
         self.setReadOnly(True)
         self.setMaximumBlockCount(MAX_BLOCKS)
-        self.setPlaceholderText("Command output appears here.")
+        self.setPlaceholderText(tr("Command output appears here."))
         font = QFont("Menlo")
         font.setStyleHint(QFont.Monospace)
         font.setPointSize(12)

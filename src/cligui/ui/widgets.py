@@ -27,6 +27,7 @@ from PySide6.QtWidgets import (
 )
 
 from cligui.model.spec import OptionKind, OptionSpec, PositionalSpec
+from cligui.ui.i18n import tr
 
 
 class Editor(QObject):
@@ -56,7 +57,7 @@ class FlagEditor(Editor):
         if negatable:
             box.setTristate(True)
             box.setCheckState(Qt.PartiallyChecked)
-            box.setToolTip("Unset / on / explicitly off")
+            box.setToolTip(tr("Unset / on / explicitly off"))
         box.checkStateChanged.connect(lambda _: self.changed.emit())
 
     def value(self) -> Any:
@@ -80,7 +81,7 @@ class CountEditor(Editor):
     def __init__(self) -> None:
         spin = QSpinBox()
         spin.setRange(0, 20)
-        spin.setSpecialValueText("off")
+        spin.setSpecialValueText(tr("off"))
         super().__init__(spin)
         spin.valueChanged.connect(lambda _: self.changed.emit())
 
@@ -99,7 +100,7 @@ class NumberEditor(Editor):
             spin.setDecimals(4)
         # A dedicated "unset" sentinel keeps zero a usable value.
         self._unset = spin.minimum()
-        spin.setSpecialValueText("unset")
+        spin.setSpecialValueText(tr("unset"))
         spin.setValue(self._unset)
         super().__init__(spin)
         spin.valueChanged.connect(lambda _: self.changed.emit())
@@ -156,7 +157,7 @@ class ListEditor(Editor):
 
     def __init__(self) -> None:
         line = QLineEdit()
-        line.setPlaceholderText("comma-separated values")
+        line.setPlaceholderText(tr("comma-separated values"))
         super().__init__(line)
         line.textChanged.connect(lambda _: self.changed.emit())
 
@@ -173,10 +174,10 @@ class ListEditor(Editor):
 
 class PathDialog(QFileDialog):
     def __init__(self, parent: QWidget, multiple: bool) -> None:
-        super().__init__(parent, "Choose files or folders")
+        super().__init__(parent, tr("Choose files or folders"))
         self.setOption(QFileDialog.DontUseNativeDialog)
         self.setFileMode(QFileDialog.ExistingFiles if multiple else QFileDialog.AnyFile)
-        self.setLabelText(QFileDialog.Accept, "Choose")
+        self.setLabelText(QFileDialog.Accept, tr("Choose"))
         self.paths: list[str] = []
         for view_type in (QListView, QTreeView):
             for view in self.findChildren(view_type):
@@ -208,10 +209,10 @@ class PathEditor(Editor):
 
         self.line = QLineEdit()
         self.line.setPlaceholderText(
-            "directory path" if directory and not allow_directory
-            else "file or directory path"
+            tr("directory path") if directory and not allow_directory
+            else tr("file or directory path")
         )
-        browse = QPushButton("Browse…")
+        browse = QPushButton(tr("Browse…"))
         browse.setAutoDefault(False)
         layout.addWidget(self.line, 1)
         layout.addWidget(browse)
@@ -225,7 +226,9 @@ class PathEditor(Editor):
 
     def _browse(self) -> None:
         if self._directory and not self._allow_directory:
-            chosen = QFileDialog.getExistingDirectory(self.widget, "Choose a directory")
+            chosen = QFileDialog.getExistingDirectory(
+                self.widget, tr("Choose a directory")
+            )
             paths = [chosen] if chosen else []
         else:
             dialog = PathDialog(self.widget, self._multiple)

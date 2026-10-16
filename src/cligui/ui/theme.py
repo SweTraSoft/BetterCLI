@@ -89,6 +89,7 @@ def _apply_colors(application: QApplication, dark_mode: bool) -> None:
         palette = application.style().standardPalette()
         application.setPalette(palette)
         QToolTip.setPalette(palette)
+        application.setStyleSheet(_button_style(dark_mode))
         _refresh_style_sheets(application)
         return
 
@@ -139,7 +140,38 @@ def _apply_colors(application: QApplication, dark_mode: bool) -> None:
 
     application.setPalette(palette)
     QToolTip.setPalette(palette)
+    application.setStyleSheet(_button_style(dark_mode))
     _refresh_style_sheets(application)
+
+
+def _button_style(dark_mode: bool) -> str:
+    """One look for every push button; the default button uses the accent colour."""
+    if dark_mode:
+        background, hover, pressed, disabled = (
+            "#252D3A", "#2E3847", "#1D232D", "#737D8C"
+        )
+    else:
+        background, hover, pressed, disabled = (
+            "#FFFFFF", "#F2F4F7", "#E3E6EB", "#A0A4AB"
+        )
+    return (
+        "QPushButton {"
+        f" background-color: {background};"
+        " color: palette(button-text);"
+        " border: none;"
+        " border-radius: 5px; padding: 5px 17px; min-height: 18px;"
+        "}"
+        f"QPushButton:hover {{ background-color: {hover}; }}"
+        f"QPushButton:pressed {{ background-color: {pressed}; }}"
+        "QPushButton:default {"
+        " background-color: palette(highlight);"
+        " color: palette(highlighted-text); font-weight: 600;"
+        "}"
+        "QPushButton:default:pressed { background-color: palette(dark); }"
+        "QPushButton:disabled {"
+        f" background-color: {background}; color: {disabled}; font-weight: normal;"
+        "}"
+    )
 
 
 def _refresh_style_sheets(application: QApplication) -> None:

@@ -27,6 +27,7 @@ APPEARANCES = (APPEARANCE_LIGHT, APPEARANCE_DARK, APPEARANCE_SYSTEM)
 @dataclass
 class Settings:
     appearance: str = APPEARANCE_SYSTEM
+    language: str = "system"
     llm_enabled: bool = True
     base_url: str = DEFAULT_BASE_URL
     model: str = DEFAULT_MODEL
@@ -52,6 +53,11 @@ class Settings:
         settings = cls(**{k: v for k, v in raw.items() if k in known})
         if settings.appearance not in APPEARANCES:
             settings.appearance = APPEARANCE_SYSTEM
+        if not isinstance(settings.language, str) or settings.language not in {
+            "system", "en", "es", "zh", "hi", "ar", "pt", "bn",
+            "ru", "ja", "de", "fr", "tr", "id", "ko", "ur", "sv",
+        }:
+            settings.language = "system"
         return settings
 
     def save(self) -> None:

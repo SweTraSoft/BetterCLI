@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
+
+import pytest
 
 from cligui.history import MAX_ENTRIES, CommandHistory
 
@@ -86,9 +89,78 @@ class TestCommandHistory:
     def test_clear(self, tmp_path: Path):
         h = store(tmp_path)
         h.add("ls")
+        h.record_usage("ls")
         h.clear()
         assert h.items() == []
         assert store(tmp_path).items() == []
+        assert h.usage_count("ls") == 0
+        assert store(tmp_path).usage_count("ls") == 0
+
+    def test_usage_counts_runs_not_history_visits(self, tmp_path: Path):
+        h = store(tmp_path)
+        h.add("git log")
+        h.add("git log")
+        assert h.usage_count("git") == 0
+
+        h.record_usage("git")
+        h.record_usage("/usr/bin/git")
+        h.record_usage("curl")
+
+        reopened = store(tmp_path)
+        assert reopened.usage_count("git") == 2
+        assert reopened.usage_count("/opt/homebrew/bin/git") == 2
+        assert reopened.usage_count("curl") == 1
+        assert reopened.usage_count("ls") == 0
+
+    def test_usage_survives_history_eviction(self, tmp_path: Path):
+        h = store(tmp_path)
+        h.add("git")
+        h.record_usage("git")
+        for i in range(MAX_ENTRIES):
+            h.add(f"cmd{i}")
+
+        reopened = store(tmp_path)
+        assert "git" not in reopened.items()
+        assert reopened.usage_count("git") == 1
+
+    def test_legacy_history_has_no_invented_usage(self, tmp_path: Path):
+        path = tmp_path / "history.json"
+        path.write_text('["git log", "curl"]', encoding="utf-8")
+
+        h = CommandHistory(path)
+
+        assert h.items() == ["git log", "curl"]
+        assert h.usage_count("git") == 0
+
+    @pytest.mark.parametrize("invalid", [-1, 1.5, True, "5", None])
+    def test_invalid_usage_counts_are_logged(self, tmp_path: Path, caplog, invalid):
+        h = store(tmp_path)
+        h.usage_path.write_text(
+            json.dumps({"git": invalid, "curl": 3}), encoding="utf-8"
+        )
+
+        reopened = store(tmp_path)
+
+        assert reopened.usage_count("git") == 0
+        assert reopened.usage_count("curl") == 3
+        assert "invalid command usage entry" in caplog.text
+
+    @pytest.mark.parametrize("raw", ["{broken", "[]"])
+    def test_invalid_usage_file_is_logged(self, tmp_path: Path, caplog, raw):
+        h = store(tmp_path)
+        h.usage_path.write_text(raw, encoding="utf-8")
+
+        assert store(tmp_path).usage_count("git") == 0
+        assert "command usage" in caplog.text
+
+    def test_usage_write_failure_is_logged(self, tmp_path: Path, caplog):
+        h = store(tmp_path)
+        h.usage_path.mkdir()
+
+        h.record_usage("git")
+
+        assert h.usage_count("git") == 1
+        assert "could not write command usage" in caplog.text
 
     def test_corrupt_file_is_ignored(self, tmp_path: Path):
         path = tmp_path / "history.json"

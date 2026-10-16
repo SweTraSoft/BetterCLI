@@ -10,14 +10,24 @@ from PySide6.QtWidgets import QApplication
 from cligui.builder import build_argv
 from cligui.discovery import CommandNotFoundError
 from cligui.history import CommandHistory
-from cligui.model.spec import CommandSpec, OptionKind, PositionalSpec, SubcommandSpec
-from cligui.ui import main_window
+from cligui.model.spec import (
+    CommandSpec,
+    OptionKind,
+    OptionSpec,
+    PositionalSpec,
+    SubcommandSpec,
+)
+from cligui.settings import Settings
+from cligui.ui import i18n, main_window
 from cligui.ui.widgets import PathDialog, PathEditor
 
 
 @pytest.fixture
 def window(monkeypatch, tmp_path):
     application = QApplication.instance() or QApplication([])
+    monkeypatch.setattr(
+        main_window.Settings, "load", classmethod(lambda _cls: Settings())
+    )
     monkeypatch.setattr(
         main_window, "CommandHistory", lambda: CommandHistory(tmp_path / "history.json")
     )
@@ -49,6 +59,39 @@ def test_discovery_starts_without_confirmation(window, monkeypatch):
 
 def test_window_title_is_bettercli(window):
     assert window.windowTitle() == "BetterCLI"
+
+
+def test_ui_retranslates_when_language_changes(window):
+    spec = CommandSpec(
+        argv_prefix=["example"],
+        options=[OptionSpec(long="output", kind=OptionKind.STRING)],
+        positionals=[PositionalSpec(name="target", required=False)],
+    )
+    window.form.load(spec)
+    window.form._option_editors["output"].set_value("output.txt")
+    window.form._positional_editors["target"].set_value("destination")
+    window.form._extra.setText("--verbose")
+
+    i18n.set_language("es")
+    try:
+        window._retranslate_ui()
+        assert window.settings_button.text() == "Configuración…"
+        assert window.run_button.text() == "Ejecutar"
+        assert window.output_heading.text() == "Salida"
+        assert window.command_editor.placeholderText() == (
+            "Puedes escribir aquí directamente."
+        )
+        assert [group.title() for group in window.form._groups] == [
+            "Argumentos",
+            "Opciones",
+            "Argumentos adicionales",
+        ]
+        assert window.form.values().options == {"output": "output.txt"}
+        assert window.form.values().positionals == {"target": "destination"}
+        assert window.form.values().extra == ["--verbose"]
+    finally:
+        i18n.set_language("en")
+        window._retranslate_ui()
 
 
 def test_explore_heading_is_above_command_row(window):
@@ -149,6 +192,31 @@ def test_command_output_and_working_directory_fields_share_rounded_style(window)
     assert style == window.output.styleSheet()
     assert style == window.cwd_input.styleSheet()
     assert "border-radius: 6px" in style
+
+
+def test_choose_working_directory_updates_field(window, monkeypatch, tmp_path):
+    monkeypatch.setattr(
+        main_window.QFileDialog,
+        "getExistingDirectory",
+        Mock(return_value=str(tmp_path)),
+    )
+
+    window._choose_cwd()
+
+    assert window.cwd_input.text() == str(tmp_path)
+
+
+def test_cancel_working_directory_picker_keeps_field_unchanged(window, monkeypatch):
+    window.cwd_input.setText("/tmp")
+    monkeypatch.setattr(
+        main_window.QFileDialog,
+        "getExistingDirectory",
+        Mock(return_value=""),
+    )
+
+    window._choose_cwd()
+
+    assert window.cwd_input.text() == "/tmp"
 
 
 def test_settings_button_is_at_bottom_of_sidebar_and_opens_dialog(window, monkeypatch):
@@ -286,6 +354,21 @@ def test_unavailable_common_commands_are_disabled(window, monkeypatch):
         widget.close()
 
 
+def test_command_dropdown_has_100_unique_commands_in_popularity_order(window):
+    commands = [
+        window.command_input.itemText(index)
+        for index in range(window.command_input.count())
+    ]
+
+    assert len(commands) == len(set(commands)) == 100
+    assert commands == list(main_window.COMMON_COMMANDS)
+    assert commands[:5] == ["ls", "cd", "git", "pwd", "cat"]
+    assert commands.index("curl") < commands.index("wget")
+    assert commands.index("npm") < commands.index("pnpm")
+    assert window.command_input.maxVisibleItems() == 100
+    assert "estimated general usage frequency" in window.command_input.toolTip()
+
+
 def test_command_dropdown_rows_include_descriptions(window):
     from PySide6.QtWidgets import QStyleOptionViewItem
 
@@ -310,6 +393,117 @@ def test_command_dropdown_rows_include_descriptions(window):
     window.command_input.showPopup()
     QApplication.processEvents()
     window.command_input.hidePopup()
+
+
+def test_command_runs_rank_suggestions_by_frequency_and_persist(window):
+    for command in ("curl --version", "curl --help", "git log"):
+        window.command_editor.setPlainText(command)
+        window._search_timer.stop()
+        window.run()
+        window.runner.finished.emit(0)
+
+    assert [window.command_input.itemText(index) for index in range(4)] == [
+        "curl", "git", "ls", "cd"
+    ]
+    assert window.command_input.count() == 100
+    assert window.history.usage_count("curl") == 2
+    assert window.history.usage_count("git") == 1
+
+    reopened = main_window.MainWindow()
+    try:
+        assert [reopened.command_input.itemText(index) for index in range(4)] == [
+            "curl", "git", "ls", "cd"
+        ]
+        assert reopened.command_input.currentText() == ""
+    finally:
+        reopened.close()
+
+
+def test_subcommand_discovery_does_not_increase_usage(window):
+    window._on_discovered(
+        CommandSpec(argv_prefix=["git", "log"]),
+        SimpleNamespace(from_cache=False, note=None),
+    )
+
+    assert window.history.usage_count("git") == 0
+    assert window.command_input.itemText(0) == "ls"
+
+
+def test_command_usage_ties_keep_general_popularity_order(window):
+    for command in ("curl", "git", "ls"):
+        window.history.record_usage(command)
+    window._populate_command_suggestions()
+
+    assert [window.command_input.itemText(index) for index in range(4)] == [
+        "ls", "git", "curl", "cd"
+    ]
+
+
+@pytest.mark.parametrize("selection_length", [0, 4, -4])
+def test_usage_refresh_preserves_input_and_selection(window, selection_length):
+    window.command_input.setCurrentText("unfinished input")
+    editor = window.command_input.lineEdit()
+    editor.setCursorPosition(5)
+    if selection_length:
+        editor.setSelection(5, selection_length)
+    cursor = editor.cursorPosition()
+    selection_start = editor.selectionStart()
+    selected = editor.selectedText()
+    changed = Mock()
+    window.command_input.currentTextChanged.connect(changed)
+    editor.textChanged.connect(changed)
+    window.history.record_usage("curl")
+
+    window._populate_command_suggestions()
+
+    assert window.command_input.currentText() == "unfinished input"
+    assert editor.cursorPosition() == cursor
+    assert editor.selectionStart() == selection_start
+    assert editor.selectedText() == selected
+    assert window.command_input.itemText(0) == "curl"
+    changed.assert_not_called()
+
+
+def test_clear_history_resets_usage_ranking_without_changing_input(window):
+    window.history.record_usage("curl")
+    window._populate_command_suggestions()
+    window.command_input.setCurrentText("unfinished input")
+
+    window._clear_history()
+
+    assert window.command_input.itemText(0) == "ls"
+    assert window.command_input.currentText() == "unfinished input"
+    assert CommandHistory(window.history.path).usage_count("curl") == 0
+
+
+def test_start_error_does_not_increase_command_usage(window, monkeypatch):
+    window.command_editor.setPlainText("curl --version")
+    window.runner.start.side_effect = RuntimeError("Could not start")
+    monkeypatch.setattr(window, "_warn", Mock())
+
+    window.run()
+
+    assert window.history.usage_count("curl") == 0
+    assert window.command_input.itemText(0) == "ls"
+
+
+def test_reranking_keeps_descriptions_and_unavailable_commands_disabled(
+    window, monkeypatch
+):
+    def resolve_binary(command):
+        if command == "docker":
+            raise CommandNotFoundError("docker was not found")
+
+    monkeypatch.setattr(main_window, "resolve_binary", resolve_binary)
+    window.history.record_usage("docker")
+    window._populate_command_suggestions()
+
+    item = window.command_input.model().item(0)
+    assert item.text() == "docker"
+    assert not item.isEnabled()
+    assert item.data(main_window.COMMAND_DESCRIPTION_ROLE) == (
+        main_window.COMMAND_DESCRIPTIONS["docker"]
+    )
 
 
 def test_every_common_command_suggestion_has_a_description():

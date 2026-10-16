@@ -32,10 +32,23 @@ uv run bettercli
 
 The help-text viewer preserves ANSI colors and styles when a command provides them.
 
+The top command dropdown lists 100 common CLI commands. Initially ordered by
+estimated general usage frequency, it promotes commands as you run them in
+BetterCLI. Usage counts persist across restarts; subcommands and absolute
+executable paths count toward the same command. Ties keep the initial order.
+Each entry includes a description; commands not found on your PATH are disabled.
+The list scrolls when it cannot fit on screen.
+
 ## Appearance
 
 Under **Tools › Settings…**, choose **Light**, **Dark**, or **Follow system**
 (the default), which tracks the macOS appearance while the app is running.
+## Language
+
+Under **Tools › Settings…**, choose **System language** to follow the operating
+system language (English is used when it is not available), or select one of
+the 16 included UI languages. Language changes take effect as soon as they are
+saved.
 
 ## App Store version enforcement
 
@@ -67,7 +80,7 @@ successful check before opening.
   to reopen it without running it. Repeated runs append to that command's output;
   Clear removes the active command's saved output. These transcripts are stored
   locally and may contain sensitive command output. Clear command history in the
-  Tools menu to remove all saved sessions.
+  Tools menu to remove all saved sessions and reset the dropdown's usage ranking.
 - Interactive and full-screen programs (`vim`, `top`, `ssh` sessions, anything
   needing a password) will not work, because the output pane is not a terminal.
 - Safety warnings are advisory and can always be overridden.

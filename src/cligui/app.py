@@ -13,6 +13,7 @@ from cligui import __version__
 from cligui.settings import Settings
 from cligui.updates import APP_STORE_ID, check_app_store_version
 from cligui.ui.theme import apply_theme
+from cligui.ui.i18n import set_language, tr
 
 
 def main() -> int:
@@ -22,6 +23,7 @@ def main() -> int:
 
     app = QApplication(sys.argv)
     settings = Settings.load()
+    set_language(settings.language)
     apply_theme(app, settings.appearance)
     app.setApplicationName("BetterCLI")
     app.setApplicationDisplayName("BetterCLI")
@@ -32,15 +34,15 @@ def main() -> int:
     if not version_check.allowed:
         dialog = QMessageBox(
             QMessageBox.Icon.Warning,
-            "Update required" if version_check.store_version else "Version check required",
+            tr("Update required") if version_check.store_version else tr("Version check required"),
             version_check.message,
             QMessageBox.StandardButton.NoButton,
         )
         if version_check.store_version and APP_STORE_ID is not None:
             open_store = dialog.addButton(
-                "Open App Store", QMessageBox.ButtonRole.AcceptRole
+                tr("Open App Store"), QMessageBox.ButtonRole.AcceptRole
             )
-            dialog.addButton("Quit", QMessageBox.ButtonRole.RejectRole)
+            dialog.addButton(tr("Quit"), QMessageBox.ButtonRole.RejectRole)
             dialog.exec()
             if dialog.clickedButton() is open_store:
                 QDesktopServices.openUrl(
