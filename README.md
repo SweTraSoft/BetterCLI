@@ -50,15 +50,6 @@ system language (English is used when it is not available), or select one of
 the 16 included UI languages. Language changes take effect as soon as they are
 saved.
 
-## App Store version enforcement
-
-When BetterCLI is listed on the Apple App Store, set `APP_STORE_ID` in
-`src/cligui/updates.py` to its numeric listing ID. At startup, the app checks
-Apple's lookup service and blocks outdated versions. If the service is
-unavailable, BetterCLI permits offline use for up to 28 days after its last
-successful check (or first offline launch); after that, it requires a
-successful check before opening.
-
 ## Notes and limits
 
 - Only one command per window. Pipes, redirection and `&&` are rejected by
