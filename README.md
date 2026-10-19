@@ -111,58 +111,6 @@ uv run pyinstaller packaging/cligui.spec
 open dist/BetterCLI.app
 ```
 
-### Preparing a Mac App Store package
-
-The regular build above is not an App Store submission. Use the separate
-distribution workflow after installing these items:
-
-1. In your [Apple Developer account](https://developer.apple.com/account/),
-   use the registered explicit macOS App ID `com.swetrasoft.BetterCLI` (or your own bundle
-   ID). Use the same ID for the app record in App Store Connect.
-2. Create an **Apple Distribution** or **Mac App Distribution** certificate
-   for app signing, and a **Mac Installer Distribution** certificate for
-   package signing. Import them into Keychain Access on the Mac that holds
-   their private keys. Apple Development and Developer ID certificates are
-   not substitutes. `security find-identity -v` must list both identities.
-3. Create a **Mac App Store distribution provisioning profile** for that
-   explicit App ID and app signing certificate. Download the
-   `.provisionprofile` outside this repository.
-
-Use the full identity names from Keychain Access:
-
-```sh
-uv sync
-uv run python packaging/build_app_store.py \
-  --app-identity "Apple Distribution: YOUR NAME (TEAMID)" \
-  --installer-identity "3rd Party Mac Developer Installer: YOUR NAME (TEAMID)" \
-  --profile "$HOME/Downloads/BetterCLI.provisionprofile" \
-  --build-number 1
-```
-
-For a different registered App ID, also supply `--bundle-id YOUR.BUNDLE.ID`.
-Increment the build number for each new upload. Output is isolated under
-`dist/app-store/BUILD_NUMBER/`; an existing output directory is never overwritten.
-The workflow checks the profile's platform, expiration, App ID, team and signing
-certificate, builds from current source, embeds the profile, signs the app and
-installer, and verifies their local signatures. Do not commit profiles,
-certificates, private keys or signed distribution artifacts.
-
-**Sandbox compatibility remains a release gate.** The distribution build enables
-App Sandbox, outgoing network access and access to user-selected files. Nested
-executables inherit the sandbox. These entitlements do not grant arbitrary access
-to the filesystem or make every external CLI compatible. Test command discovery,
-execution, working-directory selection, settings, history, Keychain access and
-network requests in a sandboxed development-signed build. Reopening file access
-across launches may require security-scoped bookmarks, which BetterCLI does not
-currently implement. Do not advertise unrestricted CLI compatibility for the
-sandboxed version.
-
-After compatibility testing, use Apple's
-[Transporter](https://apps.apple.com/app/transporter/id1450874784) to validate and
-upload the `.pkg` to App Store Connect. Local signature verification is not Apple
-validation or approval. An App Store distribution-signed app is not a substitute
-for a development-signed build for local testing.
-
 ## Layout
 
 | Path | Purpose |
